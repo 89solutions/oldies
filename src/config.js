@@ -39,6 +39,12 @@ export function loadConfig(overrides = {}) {
     maxCallsPerDay: int('MAX_CALLS_PER_DAY', 6),
     avoidRepeatDays: int('AVOID_REPEAT_DAYS', 7),
     reportSuspendThreshold: int('REPORT_SUSPEND_THRESHOLD', 2),
+    // Text chats end after this many hours with no messages.
+    smsChatIdleHours: int('SMS_CHAT_IDLE_HOURS', 12),
+    // Stopped messages before a text chat is ended and sent to the team.
+    screenStrikesBeforeReport: int('SCREEN_STRIKES_BEFORE_REPORT', 3),
+    // Text-chat messages are kept this long for the team to review reports.
+    messageRetentionDays: int('MESSAGE_RETENTION_DAYS', 30),
     maxPinAttempts: int('MAX_PIN_ATTEMPTS', 5),
     pinLockMinutes: int('PIN_LOCK_MINUTES', 15),
     ...overrides,

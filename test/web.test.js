@@ -87,3 +87,25 @@ test('a forgotten PIN can be reset with a texted code', async () => {
     t.close();
   }
 });
+
+test('choosing a text chat on the website, and ending it from there', async () => {
+  const t = await setup();
+  try {
+    const b = browser(t);
+    await b.post('/join', { name: 'Margaret', phone: '07700 900094', pin: '2468', agree: '1' });
+    await b.post('/verify', { code: t.telephony.sms.at(-1).body.match(/\d{6}/)[0] });
+    await b.post('/me/available', { on: '1', medium: 'sms' });
+    let me = await b.get('/me');
+    assert.match(me.text, /on the list for a text message chat/);
+    t.addUser('Arthur', '+447700900095');
+    t.service.setAvailable(t.service.getUserByPhone('+447700900095').id, true, 'sms');
+    await t.service.runMatchmaker();
+    me = await b.get('/me');
+    assert.match(me.text, /in a text chat with Arthur/);
+    await b.post('/me/end-text-chat', {});
+    me = await b.get('/me');
+    assert.match(me.text, /Would you like to talk to Arthur again/);
+  } finally {
+    t.close();
+  }
+});

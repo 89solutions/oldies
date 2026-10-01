@@ -33,6 +33,7 @@ export function devRouter({ service, telephony, onAvailable }) {
       <input type="hidden" name="call" value="${call}"><input type="hidden" name="leg" value="${leg}">
       <button class="small" name="act" value="${act}">${label}</button></form>`;
     const legButtons = (c, leg) => {
+      if (c.medium === 'sms') return '';
       const state = c[`${leg}_state`];
       if (c.status === 'dialing' && state === 'dialing') {
         return btn(c.id, leg, 'ring', 'Hear greeting') + btn(c.id, leg, 'answer', 'Press 1 (join)')
@@ -51,20 +52,30 @@ export function devRouter({ service, telephony, onAvailable }) {
 <h1>Test-mode simulator</h1>
 <p class="muted">No real calls or texts are made. Use this page to play both people on a call.</p>
 ${noticeBox(req.session.flash)}${(delete req.session.flash, '')}
-<form method="post" action="/dev/simulator/demo">${field(csrf)}<button>Add two demo people who are free to chat</button></form>
+<form method="post" action="/dev/simulator/demo">${field(csrf)}
+<button name="medium" value="voice">Add two demo people who are free for a phone chat</button>
+<button name="medium" value="sms" class="secondary">Add two demo people who are free for a text chat</button></form>
+<h2>Send a text to the service</h2>
+<form method="post" action="/dev/simulator/sms">${field(csrf)}
+<label for="from">From</label>
+<select id="from" name="from" style="font-size:1rem;padding:.4rem">${service.q('SELECT name, phone FROM users WHERE verified = 1 ORDER BY id DESC LIMIT 30').all()
+    .map((u) => `<option value="${esc(u.phone)}">${esc(u.name)} ${esc(u.phone)}</option>`).join('')}</select>
+<label for="body">Message <span class="hint">(try FREE, YES, NO, END, REPORT, or a chat message)</span></label>
+<input id="body" name="body" type="text">
+<button class="secondary">Send text</button></form>
 <form method="post" action="/dev/simulator/match">${field(csrf)}<button class="secondary">Run matching now</button></form>
 <h2>Waiting for a chat (${waiting.length})</h2>
 <p>${waiting.map((u) => `${esc(u.name)} <span class="muted">${esc(u.phone)}</span>`).join(', ') || 'Nobody'}</p>
 <h2>Calls</h2>
 ${calls.length ? `<table><tr><th>#</th><th>Type / status</th><th>Person A</th><th>Person B</th></tr>
-${calls.map((c) => `<tr><td>${c.id}</td><td>${c.kind}<br><strong>${c.status}</strong></td>
+${calls.map((c) => `<tr><td>${c.id}</td><td>${c.medium === 'sms' ? 'text' : 'phone'} · ${c.kind}<br><strong>${c.status}</strong></td>
 <td>${esc(c.a_name)} (${c.a_state})<br>${legButtons(c, 'a')}</td>
 <td>${esc(c.b_name)} (${c.b_state})<br>${legButtons(c, 'b')}</td></tr>
 ${c.status === 'in_progress' ? `<tr><td></td><td colspan="3">Chat in progress ${btn(c.id, 'a', 'hangup', 'Both hang up')}</td></tr>` : ''}`).join('')}</table>`
     : '<p>No calls yet.</p>'}
 ${last ? `<h2>What the phone service was told to do</h2><pre>${esc(last)}</pre>` : ''}
 <h2>Text messages that would have been sent</h2>
-${telephony.sms.slice(-8).reverse().map((m) => `<p><strong>${esc(m.to)}</strong>: ${esc(m.body)}</p>`).join('') || '<p>None yet.</p>'}
+${telephony.sms.slice(-12).reverse().map((m) => `<p><strong>${esc(m.to)}</strong>: ${esc(m.body)}</p>`).join('') || '<p>None yet.</p>'}
 <h2>Telephone actions</h2>
 <pre>${esc(telephony.events.slice(-8).map((e) => `${e.type} ${e.sid} ${e.url || ''}`).join('\n') || 'None yet.')}</pre>
 <a class="button secondary" href="/">Go to the website</a>`,
@@ -79,9 +90,14 @@ ${telephony.sms.slice(-8).reverse().map((m) => `<p><strong>${esc(m.to)}</strong>
       added++;
       const id = Number(service.q(`INSERT INTO users (phone, name, pin_hash, verified, created_at) VALUES (?, ?, ?, 1, ?)`)
         .run(phone, names[Math.floor(Math.random() * names.length)], hashSecret('2468'), service.now()).lastInsertRowid);
-      service.setAvailable(id, true);
+      service.setAvailable(id, true, req.body.medium);
     }
     req.session.flash = 'Added two demo people (PIN 2468). Now press "Run matching now".';
+    res.redirect('/dev/simulator');
+  });
+
+  router.post('/simulator/sms', async (req, res) => {
+    req.session.lastTwiml = await hook(req, '/sms/incoming', {}, { From: req.body.from, Body: req.body.body ?? '' });
     res.redirect('/dev/simulator');
   });
 

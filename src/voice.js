@@ -101,8 +101,13 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     if (!user) return goodbye(res, 'Sorry, please ring again. Goodbye.');
     if (!service.canUse(user)) return goodbye(res, `${service.blockedReason(user)} Goodbye.`);
     const prompt = [];
-    if (service.isAvailable(user)) prompt.push("You're on the list for a chat, and we'll ring you when someone is free.");
-    prompt.push('To have a chat with someone new, press 1.');
+    if (service.isAvailable(user)) {
+      prompt.push(user.available_medium === 'sms'
+        ? "You're on the list for a text message chat, and we'll text you when someone is free."
+        : "You're on the list for a chat, and we'll ring you when someone is free.");
+    }
+    prompt.push('To have a chat on the phone with someone new, press 1.');
+    prompt.push('To chat by text message instead, press 5.');
     if (service.listFriends(user.id).length) prompt.push('To ring one of your friends, press 2.');
     if (service.isAvailable(user)) prompt.push("If you don't want any calls for now, press 3.");
     const pending = service.pendingFeedback(user.id)[0];
@@ -123,6 +128,10 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
       case '2':
         vr.redirect({ method: 'POST' }, '/voice/friends');
         return xml(res, vr);
+      case '5':
+        service.setAvailable(user.id, true, 'sms');
+        setImmediate(onAvailable);
+        return goodbye(res, "Lovely. We'll send you a text message as soon as someone else is free for a text chat. Just reply to our texts, and we'll pass your messages on. Your number stays private. Goodbye for now.");
       case '3':
         service.setAvailable(user.id, false);
         return goodbye(res, "That's fine, we won't ring you. Goodbye.");
@@ -397,7 +406,7 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
 }
 
 // Rejects requests that didn't really come from Twilio.
-function validateTwilio(config) {
+export function validateTwilio(config) {
   return (req, res, next) => {
     const signature = req.get('X-Twilio-Signature');
     const fullUrl = `${config.baseUrl}${req.originalUrl}`;

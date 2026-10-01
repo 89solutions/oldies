@@ -3,6 +3,7 @@
 // both go through this class, so the rules are the same either way.
 
 import { tx } from './db.js';
+import { TextChats } from './textchat.js';
 import {
   hashSecret, checkSecret, isValidPin, isWeakPin, sixDigitCode, normalizePhone, cleanName,
 } from './security.js';
@@ -19,6 +20,8 @@ export class Service {
     this.telephony = telephony;
     this.log = log;
     this.now = now;
+    this.texts = new TextChats(this);
+    this.onAvailable = null; // set by the app so matching runs straight away
   }
 
   q(sql) {
@@ -177,7 +180,8 @@ export class Service {
     return Boolean(user.available_until && user.available_until > this.now());
   }
 
-  setAvailable(userId, on) {
+  // medium: 'voice' for a phone call, 'sms' for a text-message chat.
+  setAvailable(userId, on, medium = 'voice') {
     const user = this.getUser(userId);
     if (on) {
       if (!this.canUse(user)) throw new UserError(this.blockedReason(user));
@@ -186,7 +190,11 @@ export class Service {
       }
     }
     const until = on ? this.now() + this.config.availableForMinutes * 60 * 1000 : null;
-    this.q('UPDATE users SET available_until = ? WHERE id = ?').run(until, userId);
+    if (on) {
+      this.q('UPDATE users SET available_until = ?, available_medium = ? WHERE id = ?').run(until, medium === 'sms' ? 'sms' : 'voice', userId);
+    } else {
+      this.q('UPDATE users SET available_until = NULL WHERE id = ?').run(userId);
+    }
     return until;
   }
 
@@ -221,10 +229,23 @@ export class Service {
   // Pairs up people who are waiting, at random, never pairing anyone with
   // someone they've blocked (or who blocked them). People who've spoken in the
   // last few days are only paired again if there's nobody new for them.
+  // People are only paired with someone who wants the same kind of chat.
   findPairs(random = Math.random) {
-    const waiting = this.q(`SELECT id FROM users WHERE status = 'active' AND verified = 1 AND available_until > ?
+    const pairs = [];
+    for (const medium of ['voice', 'sms']) {
+      for (const [a, b] of this.pairUp(this.waitingFor(medium), random)) pairs.push([a, b, medium]);
+    }
+    return pairs;
+  }
+
+  waitingFor(medium) {
+    return this.q(`SELECT id FROM users WHERE status = 'active' AND verified = 1 AND available_until > ?
+      AND available_medium = ?
       AND id NOT IN (SELECT user_a FROM calls WHERE ${ACTIVE_CALL})
-      AND id NOT IN (SELECT user_b FROM calls WHERE ${ACTIVE_CALL})`).all(this.now()).map((r) => r.id);
+      AND id NOT IN (SELECT user_b FROM calls WHERE ${ACTIVE_CALL})`).all(this.now(), medium).map((r) => r.id);
+  }
+
+  pairUp(waiting, random) {
     const blocked = new Set();
     const recent = new Set();
     const key = (x, y) => (x < y ? `${x}:${y}` : `${y}:${x}`);
@@ -264,21 +285,23 @@ export class Service {
     return best.pairs;
   }
 
-  // Safety net in case a "call finished" message from Twilio never arrives.
-  closeStaleCalls() {
+  // Safety net in case a "call finished" message from Twilio never arrives,
+  // and closes text chats that have gone quiet.
+  async closeStaleCalls() {
     const now = this.now();
-    this.q(`UPDATE calls SET status = 'failed', ended_at = ? WHERE status = 'dialing' AND created_at < ?`)
+    this.q(`UPDATE calls SET status = 'failed', ended_at = ? WHERE medium = 'voice' AND status = 'dialing' AND created_at < ?`)
       .run(now, now - 10 * 60 * 1000);
-    this.q(`UPDATE calls SET status = 'completed', ended_at = ? WHERE status = 'in_progress' AND started_at < ?`)
+    this.q(`UPDATE calls SET status = 'completed', ended_at = ? WHERE medium = 'voice' AND status = 'in_progress' AND started_at < ?`)
       .run(now, now - (this.config.maxCallMinutes + 10) * 60 * 1000);
+    await this.texts.closeQuiet();
   }
 
   async runMatchmaker(random) {
-    this.closeStaleCalls();
+    await this.closeStaleCalls();
     const started = [];
-    for (const [a, b] of this.findPairs(random)) {
+    for (const [a, b, medium] of this.findPairs(random)) {
       try {
-        started.push(await this.startCall('random', a, b));
+        started.push(medium === 'sms' ? await this.texts.start('random', a, b) : await this.startCall('random', a, b));
       } catch (err) {
         this.log.error?.('Could not start call', err);
       }
@@ -458,7 +481,7 @@ export class Service {
     return Boolean(this.q('SELECT 1 FROM connections WHERE user_low = ? AND user_high = ?').get(low, high));
   }
 
-  async callFriend(userId, friendId, opts = {}) {
+  async callFriend(userId, friendId, { medium = 'voice', ...opts } = {}) {
     const user = this.getUser(userId);
     const friend = this.getUser(friendId);
     if (!this.canUse(user)) throw new UserError(this.blockedReason(user));
@@ -468,8 +491,9 @@ export class Service {
     if (this.callsToday(userId) >= this.config.maxCallsPerDay) {
       throw new UserError("You've had lots of chats today. Please come back tomorrow.");
     }
-    if (this.activeCall(friendId)) throw new UserError(`${friend.name} is on another call. Please try again later.`);
-    return this.startCall('reconnect', userId, friendId, opts);
+    if (this.activeCall(userId)) throw new UserError("You're already in a chat. Please finish it first.");
+    if (this.activeCall(friendId)) throw new UserError(`${friend.name} is in another chat. Please try again later.`);
+    return medium === 'sms' ? this.texts.start('reconnect', userId, friendId) : this.startCall('reconnect', userId, friendId, opts);
   }
 
   // ---------- safety ----------
@@ -483,7 +507,8 @@ export class Service {
 
   // Reporting always blocks the person too. Once enough different people have
   // reported someone, their account is paused until the team reviews it.
-  async report(userId, callId, reason) {
+  // `say` (for text chats) replaces what each person is told when the chat ends.
+  async report(userId, callId, reason, { say } = {}) {
     const call = this.getCall(callId);
     const other = call && this.otherPartyFor(call, userId);
     if (!other) throw new UserError('We could not find that call.');
@@ -491,6 +516,14 @@ export class Service {
     const reportId = Number(this.q('INSERT INTO reports (call_id, reporter, reported, reason, created_at) VALUES (?, ?, ?, ?, ?)')
       .run(callId, userId, other.id, text, this.now()).lastInsertRowid);
     this.block(userId, other.id);
+    if (call.medium === 'sms' && ['dialing', 'in_progress'].includes(call.status)) {
+      await this.texts.end(call, {
+        say: say ?? {
+          [userId]: `Lonely Oldies: thank you for telling us. ${other.name} has been blocked, the chat has ended, and our team will look into it.`,
+          [other.id]: `Lonely Oldies: your text chat with ${this.getUser(userId).name} has finished.`,
+        },
+      });
+    }
     const reporters = this.q(`SELECT COUNT(DISTINCT reporter) AS n FROM reports WHERE reported = ? AND status = 'open'`)
       .get(other.id).n;
     if (reporters >= this.config.reportSuspendThreshold && other.status === 'active') {
@@ -506,7 +539,8 @@ export class Service {
   async suspend(userId) {
     this.q(`UPDATE users SET status = 'suspended', available_until = NULL WHERE id = ?`).run(userId);
     const live = this.activeCall(userId);
-    if (live) for (const sid of [live.a_sid, live.b_sid]) if (sid) await this.telephony.hangUp(sid);
+    if (live?.medium === 'sms') await this.texts.end(live);
+    else if (live) for (const sid of [live.a_sid, live.b_sid]) if (sid) await this.telephony.hangUp(sid);
     this.log.warn?.(`User ${userId} suspended pending review`);
   }
 
@@ -515,7 +549,8 @@ export class Service {
   adminOverview() {
     return {
       reports: this.q(`SELECT r.*, a.name AS reporter_name, b.name AS reported_name, b.status AS reported_status,
-          (SELECT COUNT(*) FROM reports x WHERE x.reported = r.reported) AS total_against
+          (SELECT COUNT(*) FROM reports x WHERE x.reported = r.reported) AS total_against,
+          (SELECT medium FROM calls c WHERE c.id = r.call_id) AS medium
         FROM reports r JOIN users a ON a.id = r.reporter JOIN users b ON b.id = r.reported
         WHERE r.status = 'open' ORDER BY r.created_at DESC`).all(),
       suspended: this.q(`SELECT id, name, phone, created_at FROM users WHERE status = 'suspended'`).all(),
