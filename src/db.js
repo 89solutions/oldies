@@ -82,14 +82,37 @@ CREATE TABLE IF NOT EXISTS ivr_sessions (
   created_at INTEGER NOT NULL
 );
 
+-- Every text-chat message, kept so the team can review reports.
+CREATE TABLE IF NOT EXISTS messages (
+  id            INTEGER PRIMARY KEY,
+  call_id       INTEGER NOT NULL REFERENCES calls(id),
+  sender        INTEGER NOT NULL REFERENCES users(id),
+  body          TEXT NOT NULL,
+  delivered     INTEGER NOT NULL,                     -- 0 = stopped by screening
+  screen_reason TEXT,
+  created_at    INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_available ON users(available_until);
+CREATE INDEX IF NOT EXISTS idx_messages_call ON messages(call_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_calls_users ON calls(user_a, user_b);
 CREATE INDEX IF NOT EXISTS idx_reports_reported ON reports(reported, status);
 `;
 
+// Columns added after the first release. Each is added if an older database lacks it.
+const ADDED_COLUMNS = [
+  ['users', 'available_medium', "TEXT NOT NULL DEFAULT 'voice'"],   // voice | sms: how they want this chat
+  ['calls', 'medium', "TEXT NOT NULL DEFAULT 'voice'"],             // voice = phone call, sms = text chat
+  ['calls', 'last_activity_at', 'INTEGER'],
+];
+
 export function openDb(path) {
   const db = new DatabaseSync(path);
   db.exec(SCHEMA);
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
   return db;
 }
 

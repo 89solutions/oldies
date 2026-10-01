@@ -8,6 +8,7 @@ import { Service } from './service.js';
 import { voiceRouter } from './voice.js';
 import { webRouter } from './web.js';
 import { devRouter } from './dev.js';
+import { smsRouter } from './sms.js';
 
 export function createApp({ config = loadConfig(), db, telephony, log = console, now } = {}) {
   db ??= openDb(config.dbPath);
@@ -38,7 +39,9 @@ export function createApp({ config = loadConfig(), db, telephony, log = console,
     next();
   });
 
+  service.onAvailable = runMatchmaker;
   app.use('/voice', voiceRouter({ service, config, log, onAvailable: runMatchmaker }));
+  app.use('/sms', smsRouter({ service, config, log }));
 
   app.use(cookieSession({
     name: 'lo_session',

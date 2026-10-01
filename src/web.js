@@ -52,7 +52,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
       title: 'Welcome',
       body: `
 <h1>A friendly chat, whenever you'd like one</h1>
-<p>Lonely Oldies puts you through to another person for a chat on the phone.</p>
+<p>Lonely Oldies puts you in touch with another person for a chat, on the phone or by text message.</p>
 <p><strong>Your phone number is always kept private.</strong> We ring you both from our own number, so nobody ever sees yours.</p>
 <a class="button" href="/join">Join Lonely Oldies</a>
 <a class="button secondary" href="/signin">I've already joined</a>
@@ -71,7 +71,9 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
 <li>Only your first name is shared.</li>
 <li>Never tell anyone your address, bank details, PIN or passwords.</li>
 <li>Nobody from Lonely Oldies will ever ask you for money or your PIN.</li>
-<li>If a chat makes you uncomfortable, press the <strong>star key (*)</strong> to end it straight away.</li>
+<li>If a phone chat makes you uncomfortable, press the <strong>star key (*)</strong> to end it straight away.</li>
+<li>In a text chat, text <strong>END</strong> to finish or <strong>REPORT</strong> if anything upsets you.</li>
+<li>Every text message is checked before it is passed on. Messages with phone numbers, addresses, web links, anything about money, or unkind words are stopped.</li>
 <li>After a chat you can report someone. They are blocked from ever reaching you again, and our team will look into it.</li>
 <li>If someone is reported by more than one person, their account is paused straight away.</li>
 <li>If you are ever in danger, ring the emergency services.</li>
@@ -207,12 +209,21 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown 
     let status;
     if (user.status !== 'active') {
       status = `<div class="card status"><p>${esc(service.blockedReason(user))}</p></div>`;
+    } else if (live?.medium === 'sms') {
+      const other = service.otherPartyFor(live, user.id);
+      status = `<div class="card status">
+<h1>${live.status === 'dialing' ? `Waiting for ${esc(other.name)} to reply` : `You're in a text chat with ${esc(other.name)}`}</h1>
+<p>Reply to our text messages on your phone, and we'll pass them on. Your numbers stay private.</p>
+<form method="post" action="/me/end-text-chat">${field(csrf)}<button class="secondary">End the text chat</button></form>
+<a href="/me/report?call=${live.id}">Something's not right in this chat</a>
+</div>`;
     } else if (live) {
       status = `<div class="card status"><h1>We're ringing you now</h1><p>Please answer your phone.</p></div>`;
     } else if (available) {
+      const byText = user.available_medium === 'sms';
       status = `<div class="card status">
-<h1>You're on the list for a chat</h1>
-<p>We'll ring you as soon as someone is free. Keep your phone nearby.</p>
+<h1>You're on the list for a ${byText ? 'text message chat' : 'chat'}</h1>
+<p>${byText ? "We'll send you a text message as soon as someone is free." : "We'll ring you as soon as someone is free. Keep your phone nearby."}</p>
 <p class="muted">We'll stop trying at ${esc(new Date(user.available_until).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }))}.</p>
 <form method="post" action="/me/available">${field(csrf)}<input type="hidden" name="on" value="0"><button class="secondary">I don't want a call now</button></form>
 </div>`;
@@ -220,7 +231,10 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown 
       status = `<div class="card status">
 <h1>Hello ${esc(user.name)}</h1>
 <p>Would you like a chat with someone new?</p>
-<form method="post" action="/me/available">${field(csrf)}<input type="hidden" name="on" value="1"><button>Yes, I'm free for a chat now</button></form>
+<form method="post" action="/me/available">${field(csrf)}<input type="hidden" name="on" value="1">
+<button name="medium" value="voice">Yes, ring me for a chat</button>
+<button name="medium" value="sms" class="secondary">Yes, a chat by text message</button></form>
+<p class="muted">With a text chat, you send text messages to our number and we pass them on.</p>
 </div>`;
     }
 
@@ -231,7 +245,7 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown 
 <form method="post" action="/me/feedback">${field(csrf)}<input type="hidden" name="call" value="${c.id}">
 <div class="row"><button name="answer" value="yes">Yes please</button><button name="answer" value="no" class="secondary">No thank you</button></div>
 </form>
-<a href="/me/report?call=${c.id}">Something wasn't right on this call</a>
+<a href="/me/report?call=${c.id}">Something wasn't right in this chat</a>
 </div>`).join('');
 
     const friendList = friends.length
@@ -239,7 +253,8 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown 
 <div class="card">
 <p><strong>${esc(f.name)}</strong>${f.last_spoke ? ` <span class="muted">· last chat ${esc(when(f.last_spoke))}</span>` : ''}</p>
 <form method="post" action="/me/call-friend">${field(csrf)}<input type="hidden" name="friend" value="${f.id}">
-<button>Ring ${esc(f.name)}</button></form>
+<div class="row"><button name="medium" value="voice">Ring ${esc(f.name)}</button>
+<button name="medium" value="sms" class="secondary">Text ${esc(f.name)}</button></div></form>
 <details><summary>More</summary>
 <form method="post" action="/me/block" onsubmit="return confirm('Block ${esc(f.name)}? You will never be put through to them again.')">${field(csrf)}
 <input type="hidden" name="user" value="${f.id}"><button class="danger small">Block ${esc(f.name)}</button></form>
@@ -251,8 +266,8 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown 
       title: 'Your page', user, refresh: available || live ? 30 : undefined,
       body: `${status}
 ${feedback ? `<h2>Your recent chats</h2>${feedback}` : ''}
-<h2>Friends you can ring</h2>
-<p class="muted">We ring you both, so your numbers stay private.</p>
+<h2>Friends</h2>
+<p class="muted">Ring or text them through us, so your numbers stay private.</p>
 ${friendList}
 <h2>Ringing us instead</h2>
 <p>You can do all of this by phone too. Ring <span class="phone">${esc(config.publicPhoneNumber)}</span> and use your PIN.</p>
@@ -269,7 +284,7 @@ ${lastCallReport(user, csrf)}`,
 
   router.post('/me/available', requireUser, handle(async (req, res) => {
     const on = req.body.on === '1';
-    service.setAvailable(req.user.id, on);
+    service.setAvailable(req.user.id, on, req.body.medium);
     if (on) setImmediate(onAvailable);
     res.redirect('/me');
   }, '/me'));
@@ -317,8 +332,18 @@ ${lastCallReport(user, csrf)}`,
   }, '/me'));
 
   router.post('/me/call-friend', requireUser, handle(async (req, res) => {
-    const call = await service.callFriend(req.user.id, Number(req.body.friend));
-    flash(req, `We're ringing you now, then we'll ring ${service.getUser(call.user_b).name}.`);
+    const medium = req.body.medium === 'sms' ? 'sms' : 'voice';
+    const call = await service.callFriend(req.user.id, Number(req.body.friend), { medium });
+    const name = service.getUser(call.user_b).name;
+    flash(req, medium === 'sms'
+      ? `We've sent ${name} a text to ask if they'd like to chat. We'll text you when they reply.`
+      : `We're ringing you now, then we'll ring ${name}.`);
+    res.redirect('/me');
+  }, '/me'));
+
+  router.post('/me/end-text-chat', requireUser, handle(async (req, res) => {
+    const live = service.activeCall(req.user.id);
+    if (live?.medium === 'sms') await service.texts.end(live);
     res.redirect('/me');
   }, '/me'));
 
@@ -335,6 +360,7 @@ ${lastCallReport(user, csrf)}`,
 
   router.get('/admin', adminAuth, (req, res) => {
     const { reports, suspended, stats } = service.adminOverview();
+    const stopped = service.texts.recentlyStopped();
     const csrf = req.session.csrf;
     const action = (path, id, label, cls = 'small') => `<form method="post" action="${path}" style="display:inline">${field(csrf)}
       <input type="hidden" name="id" value="${id}"><button class="${cls}">${label}</button></form>`;
@@ -347,11 +373,34 @@ ${lastCallReport(user, csrf)}`,
 ${reports.length ? `<table><tr><th>When</th><th>Reported</th><th>By</th><th>What happened</th><th></th></tr>
 ${reports.map((r) => `<tr><td>${esc(when(r.created_at))}</td>
 <td>${esc(r.reported_name)} (#${r.reported})<br>${esc(r.reported_status)} · ${r.total_against} report(s) in total</td>
-<td>${esc(r.reporter_name)} (#${r.reporter})</td><td><pre>${esc(r.reason)}</pre></td>
+<td>${esc(r.reporter_name)} (#${r.reporter})</td><td><pre>${esc(r.reason)}</pre>${r.medium === 'sms' ? `<a href="/admin/chat/${r.call_id}">Read the text chat</a>` : ''}</td>
 <td>${action('/admin/ban', r.reported, 'Ban', 'danger small')}${action('/admin/reinstate', r.reported, 'Clear all')}${action('/admin/dismiss', r.id, 'Dismiss this one', 'secondary small')}</td></tr>`).join('')}</table>`
     : '<p>No open reports.</p>'}
 <h2>Paused accounts</h2>
-${suspended.length ? suspended.map((u) => `<p>${esc(u.name)} (#${u.id}, ${esc(u.phone)}) ${action('/admin/ban', u.id, 'Ban', 'danger small')}${action('/admin/reinstate', u.id, 'Reinstate')}</p>`).join('') : '<p>None.</p>'}`,
+${suspended.length ? suspended.map((u) => `<p>${esc(u.name)} (#${u.id}, ${esc(u.phone)}) ${action('/admin/ban', u.id, 'Ban', 'danger small')}${action('/admin/reinstate', u.id, 'Reinstate')}</p>`).join('') : '<p>None.</p>'}
+<h2>Text messages stopped by screening</h2>
+${stopped.length ? `<table><tr><th>When</th><th>From</th><th>Message</th><th>Why</th></tr>
+${stopped.map((m) => `<tr><td>${esc(when(m.created_at))}</td><td>${esc(m.sender_name)} (#${m.sender})</td>
+<td>${esc(m.body)}</td><td>${esc(m.screen_reason)}<br><a href="/admin/chat/${m.call_id}">Whole chat</a></td></tr>`).join('')}</table>`
+    : '<p>None.</p>'}`,
+    });
+  });
+
+  router.get('/admin/chat/:id', adminAuth, (req, res) => {
+    const call = service.getCall(Number(req.params.id));
+    if (!call) return res.redirect('/admin');
+    const a = service.getUser(call.user_a);
+    const b = service.getUser(call.user_b);
+    const lines = service.texts.transcript(call.id);
+    render(req, res, {
+      title: 'Text chat',
+      body: `
+<h1>Text chat between ${esc(a.name)} (#${a.id}) and ${esc(b.name)} (#${b.id})</h1>
+<p class="muted">Started ${esc(when(call.started_at || call.created_at))} · ${esc(call.status)}. Messages are deleted after ${config.messageRetentionDays} days.</p>
+${lines.length ? `<table><tr><th>When</th><th>From</th><th>Message</th><th>Passed on?</th></tr>
+${lines.map((m) => `<tr><td>${esc(when(m.created_at))}</td><td>${esc(m.sender_name)}</td><td>${esc(m.body)}</td>
+<td>${m.delivered ? 'Yes' : `No: ${esc(m.screen_reason)}`}</td></tr>`).join('')}</table>` : '<p>No messages kept.</p>'}
+<a class="button secondary" href="/admin">Back</a>`,
     });
   });
 
