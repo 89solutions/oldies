@@ -1,0 +1,21 @@
+{
+  "name": "lonely-oldies",
+  "version": "0.1.0",
+  "description": "Safe, number-masked phone chats between older people",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/server.js",
+    "dev": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning --watch src/server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "cookie-session": "^2.1.1",
+    "express": "^5.2.1",
+    "twilio": "^6.1.2"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  }
+}
