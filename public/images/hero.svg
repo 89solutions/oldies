@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 380" role="img" aria-labelledby="t">
+  <title id="t">Two older people smiling as they chat on the phone from their armchairs</title>
+  <ellipse cx="320" cy="350" rx="300" ry="22" fill="#e3ece6"/>
+  <circle cx="110" cy="90" r="70" fill="#eaf2ee"/>
+  <circle cx="545" cy="80" r="60" fill="#e6eef5"/>
+  <!-- connecting line and heart -->
+  <path d="M232 165 Q320 30 408 165" fill="none" stroke="#2f6f6a" stroke-width="5" stroke-linecap="round" stroke-dasharray="2 14"/>
+  <circle cx="320" cy="96" r="34" fill="#ffffff" stroke="#2f6f6a" stroke-width="5"/>
+  <path d="M320 113 C300 99 299 86 307 81 C313 77 319 80 320 86 C321 80 327 77 333 81 C341 86 340 99 320 113 Z" fill="#d98e6a"/>
+  <!-- left: armchair -->
+  <rect x="62" y="150" width="190" height="190" rx="46" fill="#a8c8b4"/>
+  <rect x="44" y="230" width="52" height="110" rx="24" fill="#94b9a2"/>
+  <rect x="218" y="230" width="52" height="110" rx="24" fill="#94b9a2"/>
+  <!-- left: person -->
+  <path d="M100 340 C100 262 120 228 157 222 L183 222 C220 228 236 262 236 340 Z" fill="#d98e6a"/>
+  <path d="M157 222 L170 252 L183 222 Z" fill="#f7f5ef"/>
+  <circle cx="170" cy="176" r="46" fill="#f4cfae"/>
+  <path d="M124 172 C122 128 152 112 172 113 C200 113 220 132 216 172 C210 150 196 140 172 140 C148 140 130 150 124 172 Z" fill="#dcd7cf"/>
+  <circle cx="170" cy="104" r="20" fill="#dcd7cf"/>
+  <circle cx="153" cy="180" r="11" fill="none" stroke="#33454a" stroke-width="3.5"/>
+  <circle cx="187" cy="180" r="11" fill="none" stroke="#33454a" stroke-width="3.5"/>
+  <path d="M164 180 L176 180" stroke="#33454a" stroke-width="3.5"/>
+  <path d="M155 200 Q170 212 185 200" fill="none" stroke="#7a4b3a" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="141" cy="196" r="6" fill="#ecb39a" opacity=".7"/>
+  <circle cx="199" cy="196" r="6" fill="#ecb39a" opacity=".7"/>
+  <rect x="208" y="150" width="22" height="42" rx="6" fill="#33454a"/>
+  <circle cx="214" cy="196" r="13" fill="#f4cfae"/>
+  <!-- right: armchair -->
+  <rect x="388" y="150" width="190" height="190" rx="46" fill="#b9d3e6"/>
+  <rect x="370" y="230" width="52" height="110" rx="24" fill="#a4c3da"/>
+  <rect x="544" y="230" width="52" height="110" rx="24" fill="#a4c3da"/>
+  <!-- right: person -->
+  <path d="M404 340 C404 262 420 228 457 222 L483 222 C520 228 540 262 540 340 Z" fill="#5f8f83"/>
+  <path d="M457 222 L470 256 L483 222 Z" fill="#f7f5ef"/>
+  <circle cx="470" cy="176" r="46" fill="#e9c09c"/>
+  <path d="M424 178 C420 150 428 136 438 132 C434 150 436 160 440 170 Z" fill="#cfcac2"/>
+  <path d="M516 178 C520 150 512 136 502 132 C506 150 504 160 500 170 Z" fill="#cfcac2"/>
+  <path d="M452 152 Q470 146 488 152" fill="none" stroke="#cfcac2" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="453" cy="180" r="11" fill="none" stroke="#33454a" stroke-width="3.5"/>
+  <circle cx="487" cy="180" r="11" fill="none" stroke="#33454a" stroke-width="3.5"/>
+  <path d="M464 180 L476 180" stroke="#33454a" stroke-width="3.5"/>
+  <path d="M455 202 Q470 214 485 202" fill="none" stroke="#7a4b3a" stroke-width="4" stroke-linecap="round"/>
+  <path d="M458 212 Q470 222 482 212" fill="none" stroke="#cfcac2" stroke-width="5" stroke-linecap="round"/>
+  <rect x="410" y="150" width="22" height="42" rx="6" fill="#33454a"/>
+  <circle cx="426" cy="196" r="13" fill="#e9c09c"/>
+  <!-- plant -->
+  <rect x="300" y="300" width="40" height="44" rx="8" fill="#d98e6a"/>
+  <path d="M320 300 C300 270 296 250 304 236 C316 252 322 274 320 300 Z" fill="#7fae94"/>
+  <path d="M320 300 C340 272 346 254 338 238 C326 254 318 276 320 300 Z" fill="#94b9a2"/>
+</svg>

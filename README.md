@@ -11,6 +11,10 @@ A phone-first service that puts older people through to each other for a friendl
 - **Talk again** only if you *both* press 1 (or tap "Yes please") after the chat. You then appear as friends and can ring each other through the service, still without seeing numbers.
 - **Stay safe**: press `*` to end a chat at any time; report someone afterwards (by phone or website) and they're blocked from you forever; two reports from different people pause their account; the team can ban a number for good.
 
+## The website
+
+The pages are written for people who don't use computers much: large text (with a "Make the text bigger" link), big buttons, everyday words, calm colours and friendly pictures. They work without JavaScript on old phones and tablets. Besides joining, signing in and each member's own page, there are "How it works", "Staying safe" and "Questions" pages. The pictures are simple drawings in `public/images/`, made for this service, so there are no licences to worry about.
+
 ## How the number masking works
 
 ```
