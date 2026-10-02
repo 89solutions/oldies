@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" aria-hidden="true">
+  <circle cx="60" cy="60" r="58" fill="#e3efe9"/>
+  <!-- three friendly people side by side -->
+  <circle cx="32" cy="50" r="11" fill="#e9c4a6"/>
+  <path d="M30 37 a12 10 0 0 1 14 6 a14 10 0 0 0 -20 0 z" fill="#c9c9c9"/>
+  <path d="M14 92 a18 22 0 0 1 36 0 z" fill="#7aa6c2"/>
+  <circle cx="88" cy="50" r="11" fill="#d6a882"/>
+  <path d="M77 46 a11 11 0 0 1 22 0 a12 6 0 0 0 -22 0 z" fill="#ffffff"/>
+  <path d="M70 92 a18 22 0 0 1 36 0 z" fill="#d98e6a"/>
+  <circle cx="60" cy="44" r="13" fill="#efd0b6"/>
+  <path d="M47 41 a13 13 0 0 1 26 0 a14 8 0 0 0 -26 0 z" fill="#b8b8b8"/>
+  <path d="M38 96 a22 26 0 0 1 44 0 z" fill="#2f6f6a"/>
+  <!-- little speech bubbles -->
+  <path d="M14 22 h20 a5 5 0 0 1 5 5 v6 a5 5 0 0 1 -5 5 h-10 l-6 5 v-5 h-4 a5 5 0 0 1 -5 -5 v-6 a5 5 0 0 1 5 -5 z" fill="#ffffff" stroke="#2f6f6a" stroke-width="2"/>
+  <path d="M86 18 h20 a5 5 0 0 1 5 5 v6 a5 5 0 0 1 -5 5 h-4 v5 l-6 -5 h-10 a5 5 0 0 1 -5 -5 v-6 a5 5 0 0 1 5 -5 z" fill="#ffffff" stroke="#d98e6a" stroke-width="2"/>
+  <path d="M60 81 l-4 -4 a3 3 0 0 1 4 -4 a3 3 0 0 1 4 4 z" fill="#ffffff"/>
+</svg>

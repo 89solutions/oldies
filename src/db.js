@@ -93,7 +93,51 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at    INTEGER NOT NULL
 );
 
+-- Group chats about a shared hobby or topic.
+CREATE TABLE IF NOT EXISTS rooms (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  created_by  INTEGER REFERENCES users(id),           -- NULL = set up by the team
+  hidden      INTEGER NOT NULL DEFAULT 0,               -- hidden by the team
+  created_at  INTEGER NOT NULL
+);
+
+-- One group conversation in a room, by phone or by text.
+CREATE TABLE IF NOT EXISTS group_chats (
+  id               INTEGER PRIMARY KEY,
+  room_id          INTEGER NOT NULL REFERENCES rooms(id),
+  medium           TEXT NOT NULL CHECK (medium IN ('voice','sms')),
+  status           TEXT NOT NULL DEFAULT 'dialing' CHECK (status IN ('dialing','in_progress','completed','failed')),
+  started_at       INTEGER,                              -- two people joined
+  ended_at         INTEGER,
+  last_activity_at INTEGER,
+  created_at       INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_participants (
+  chat_id   INTEGER NOT NULL REFERENCES group_chats(id),
+  user_id   INTEGER NOT NULL REFERENCES users(id),
+  state     TEXT NOT NULL DEFAULT 'dialing',            -- dialing | joined | declined | left | removed
+  sid       TEXT,
+  joined_at INTEGER,
+  left_at   INTEGER,
+  PRIMARY KEY (chat_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS group_messages (
+  id            INTEGER PRIMARY KEY,
+  chat_id       INTEGER NOT NULL REFERENCES group_chats(id),
+  sender        INTEGER NOT NULL REFERENCES users(id),
+  body          TEXT NOT NULL,
+  delivered     INTEGER NOT NULL,
+  screen_reason TEXT,
+  created_at    INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_available ON users(available_until);
+CREATE INDEX IF NOT EXISTS idx_group_participants_user ON group_participants(user_id, state);
+CREATE INDEX IF NOT EXISTS idx_group_messages_chat ON group_messages(chat_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_call ON messages(call_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_calls_users ON calls(user_a, user_b);
 CREATE INDEX IF NOT EXISTS idx_reports_reported ON reports(reported, status);
@@ -104,6 +148,8 @@ const ADDED_COLUMNS = [
   ['users', 'available_medium', "TEXT NOT NULL DEFAULT 'voice'"],   // voice | sms: how they want this chat
   ['calls', 'medium', "TEXT NOT NULL DEFAULT 'voice'"],             // voice = phone call, sms = text chat
   ['calls', 'last_activity_at', 'INTEGER'],
+  ['users', 'available_room', 'INTEGER'],                           // set when waiting for a group chat
+  ['reports', 'group_chat_id', 'INTEGER'],                          // set for reports about a group chat
 ];
 
 export function openDb(path) {

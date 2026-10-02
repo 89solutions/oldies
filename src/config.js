@@ -45,6 +45,9 @@ export function loadConfig(overrides = {}) {
     screenStrikesBeforeReport: int('SCREEN_STRIKES_BEFORE_REPORT', 3),
     // Text-chat messages are kept this long for the team to review reports.
     messageRetentionDays: int('MESSAGE_RETENTION_DAYS', 30),
+    // Group chats start once this many people are waiting, and hold at most this many.
+    groupMinSize: int('GROUP_MIN_SIZE', 3),
+    groupMaxSize: int('GROUP_MAX_SIZE', 6),
     maxPinAttempts: int('MAX_PIN_ATTEMPTS', 5),
     pinLockMinutes: int('PIN_LOCK_MINUTES', 15),
     ...overrides,

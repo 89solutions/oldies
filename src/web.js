@@ -119,6 +119,13 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
 <p>When you've finished, send a text that just says <strong>END</strong>.</p>
 </div></div>
 
+<div class="card peach with-pic">${pic('group')}<div>
+<h2>Chat with a group</h2>
+<p>Would you like to chat with a few people who enjoy the same things as you? Choose a group, such as gardening, music or books.</p>
+<p>When ${config.groupMinSize} or more people are free, we ring you all, or text you all, and put you together. Up to ${config.groupMaxSize} people can chat at once.</p>
+<p><a href="/groups">See the group chats</a></p>
+</div></div>
+
 <div class="card sage with-pic">${pic('shield')}<div>
 <h2>Your number stays private</h2>
 <p>Every call and text message goes through Lonely Oldies. The other person never sees your phone number, and you never see theirs. They only know your first name.</p>
@@ -157,7 +164,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
 <h2>If a chat doesn't feel right</h2>
 <ul class="tips">
 <li>On the phone: press the <strong>star key (*)</strong>, or just put the phone down. Afterwards, press <strong>9</strong> to tell us.</li>
-<li>By text message: send a text that just says <strong>REPORT</strong>.</li>
+<li>By text message: send a text that just says <strong>REPORT</strong>. In a group chat, send <strong>REPORT</strong> and the person's name.</li>
 <li>On your page: press "Something wasn't right" under the chat.</li>
 </ul>
 <p>If you are ever in danger, ring 999.</p>`,
@@ -177,6 +184,10 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
       ['Do you read the text messages?', 'Every text message is checked by our system to keep everyone safe. They are kept for 30 days, so our team can look into it if someone tells us about a problem, and then deleted.'],
       ["I've forgotten my PIN", 'No problem. Press "Sign in", then "I\'ve forgotten my PIN", and we\'ll send you a text message to help you choose a new one.'],
       ['Can a family member help me?', "Of course. They're very welcome to help you join and to show you how it works."],
+      ['What is a group chat?', `A friendly chat with a few people who share a hobby or interest, such as gardening or music. When ${config.groupMinSize} or more people are free, we put you all together, on the phone or by text message. Your number stays private, just like in a chat with one person.`],
+      ['How do I leave a group chat?', 'On the phone, press the star key (*) or just put the phone down. The others carry on without you. By text message, send a text that just says LEAVE.'],
+      ['What if someone in a group is unkind?', "On the phone, put the phone down and then press 9 to tell us who it was. By text message, send REPORT and their name, for example REPORT JOHN. We'll take them out of the chat, you will never be put in touch with them again, and our team will look into it."],
+      ['Can I start a new group?', 'Yes. On the "Group chats" page, press "Start a new group" and give it a name, such as "Knitting" or "Classic films". Other members can then join in.'],
       ['Can I use a landline?', 'Yes, for phone chats. To chat by text message you need a mobile phone.'],
     ];
     render(req, res, {
@@ -328,6 +339,8 @@ ${practiceNote('The message')}
     const user = req.user;
     const available = service.isAvailable(user);
     const live = service.activeCall(user.id);
+    const group = live ? null : service.groups.activeFor(user.id);
+    const waitingRoom = available && user.available_room ? service.groups.getRoom(user.available_room) : null;
     const friends = service.listFriends(user.id);
     const pending = service.pendingFeedback(user.id);
     const csrf = req.session.csrf;
@@ -336,6 +349,18 @@ ${practiceNote('The message')}
     let status;
     if (user.status !== 'active') {
       status = `<div class="card peach"><p>${esc(service.blockedReason(user))}</p></div>`;
+    } else if (group) {
+      const roomName = service.groups.roomName(group);
+      const others = service.groups.people(group.id, ['joined']).filter((p) => p.user_id !== user.id);
+      const byText = group.medium === 'sms';
+      status = `<div class="card sky with-pic">${pic('group')}<div>
+<h2>${byText ? `You're in the ${esc(roomName)} group chat` : group.status === 'dialing' ? `We're ringing you for the ${esc(roomName)} group chat` : `You're in the ${esc(roomName)} group chat`}</h2>
+${others.length ? `<p>Also here: ${esc(service.groups.names(others))}.</p>` : ''}
+${byText ? `<p>Reply to our text messages on your phone. Everyone in the group will see what you write, with your first name. Your number stays private.</p>
+<p>To leave, send a text that just says <strong>LEAVE</strong>, or press the button below.</p>` : '<p>Please answer your phone. To leave the chat, press the star key (*) or put the phone down.</p>'}
+</div></div>
+${byText ? form('/me/leave-group', '<button class="secondary">Leave the group chat</button>') : ''}
+<p><a href="/me/report-group?chat=${group.id}">Someone in this group upset me</a></p>`;
     } else if (live?.medium === 'sms') {
       const other = service.otherPartyFor(live, user.id);
       status = `<div class="card sky with-pic">${pic('text')}<div>
@@ -347,6 +372,14 @@ ${form('/me/end-text-chat', '<button class="secondary">End the text chat</button
 <p><a href="/me/report?call=${live.id}">Something's not right in this chat</a></p>`;
     } else if (live) {
       status = `<div class="card sage with-pic">${pic('ring')}<div><h2>We're ringing you now</h2><p>Please answer your phone.</p></div></div>`;
+    } else if (waitingRoom) {
+      const byText = user.available_medium === 'sms';
+      status = `<div class="card peach with-pic">${pic('tea')}<div>
+<h2>You're on the list for the ${esc(waitingRoom.name)} group chat</h2>
+<p>When ${config.groupMinSize} or more people are free, we'll ${byText ? 'send you a text' : 'ring you'} and put you together. If a group chat is already going on, we'll add you to it.</p>
+<p>We'll keep trying until ${esc(timeOfDay(user.available_until))}.</p>
+</div></div>
+${form('/me/available', `<button class="secondary">I don't want a chat now</button>`, '<input type="hidden" name="on" value="0">')}`;
     } else if (available) {
       const byText = user.available_medium === 'sms';
       status = `<div class="card peach with-pic">${pic('tea')}<div>
@@ -363,6 +396,7 @@ ${form('/me/available', `
 <button class="choice" name="medium" value="voice">${pic('ring')}<span>Ring me for a chat<small>We'll ring you when someone is free.</small></span></button>
 <button class="choice secondary" name="medium" value="sms">${pic('text')}<span>Chat by text message<small>We'll send you a text when someone is free.</small></span></button>`,
   '<input type="hidden" name="on" value="1">')}
+<a class="button secondary choice" href="/groups">${pic('group')}<span>Join a group chat<small>Chat with a few people about a hobby.</small></span></a>
 </div>`;
     }
 
@@ -391,7 +425,7 @@ ${form('/me/block', `<button class="danger small">Stop all contact with ${esc(f.
       : `<p class="muted">When you and someone you've chatted with both say you'd like to chat again, they'll appear here.</p>`;
 
     render(req, res, {
-      title: 'Your page', user, path: '/me', refresh: available || live ? 30 : undefined,
+      title: 'Your page', user, path: '/me', refresh: available || live || group ? 30 : undefined,
       body: `<h1>Hello ${esc(user.name)}</h1>
 ${status}
 ${feedback ? `<h2>Your recent chats</h2>${feedback}` : ''}
@@ -400,9 +434,18 @@ ${feedback ? `<h2>Your recent chats</h2>${feedback}` : ''}
 ${friendList}
 <h2>Rather use the telephone?</h2>
 <p>You can do all of this by ringing us on <span class="phone">${esc(phone)}</span> and typing in your PIN.</p>
-${lastCallReport(user)}`,
+${lastCallReport(user)}
+${lastGroupReport(user, group)}`,
     });
   });
+
+  function lastGroupReport(user, live) {
+    const last = service.q(`SELECT g.* FROM group_chats g JOIN group_participants p ON p.chat_id = g.id
+      WHERE p.user_id = ? AND p.joined_at IS NOT NULL AND g.created_at > ? ORDER BY g.created_at DESC LIMIT 1`)
+      .get(user.id, service.now() - 7 * 24 * 60 * 60 * 1000);
+    if (!last || last.id === live?.id) return '';
+    return `<p><a href="/me/report-group?chat=${last.id}">Tell us about a problem in the ${esc(service.groups.roomName(last))} group chat</a></p>`;
+  }
 
   function lastCallReport(user) {
     const last = service.lastCall(user.id);
@@ -479,6 +522,119 @@ ${lastCallReport(user)}`,
     res.redirect('/me');
   }, '/me'));
 
+  // ---------- group chats ----------
+
+  router.get('/groups', (req, res) => {
+    const user = currentUser(req);
+    const member = user?.verified && user.status === 'active' ? user : null;
+    const csrf = req.session.csrf;
+    const rooms = service.groups.listRooms();
+    const roomCard = (room, i) => {
+      const live = room.live.reduce((n, c) => n + c.people, 0);
+      const news = [
+        live ? `${live} ${live === 1 ? 'person is' : 'people are'} chatting now.` : '',
+        room.waiting ? `${room.waiting} ${room.waiting === 1 ? 'person is' : 'people are'} waiting to chat.` : '',
+      ].filter(Boolean).join(' ');
+      return `<div class="card ${['sage', 'sky', 'peach'][i % 3]}" id="room-${room.id}">
+<h2>${esc(room.name)}</h2>
+${room.description ? `<p>${esc(room.description)}</p>` : ''}
+${news ? `<p><strong>${news}</strong></p>` : ''}
+${member ? `<form method="post" action="/groups/join">${field(csrf)}<input type="hidden" name="room" value="${room.id}">
+<div class="row"><button name="medium" value="voice">Join in by phone</button>
+<button name="medium" value="sms" class="secondary">Join in by text message</button></div></form>` : ''}
+</div>`;
+    };
+    render(req, res, {
+      title: 'Group chats', user, path: '/groups',
+      body: `
+<h1>Group chats</h1>
+<div class="with-pic">${pic('group')}<div>
+<p class="lead">Chat with a few people who enjoy the same things as you.</p>
+</div></div>
+<ol class="steps">
+<li><div><h3>1. Choose a group</h3><p>Pick a hobby or topic below, and choose to chat on the phone or by text message.</p></div></li>
+<li><div><h3>2. We put you together</h3><p>When ${config.groupMinSize} or more people are free, we ring you all, or text you all. Up to ${config.groupMaxSize} people can chat at once.</p></div></li>
+<li><div><h3>3. Leave whenever you like</h3><p>On the phone, just put the phone down. By text, send <strong>LEAVE</strong>. The others carry on.</p></div></li>
+</ol>
+<div class="card sage with-pic">${pic('shield')}<div>
+<p>Just like a chat with one person, <strong>nobody sees your phone number</strong>, and every text message is checked before it is passed on. If someone is unkind, tell us and you'll never be put together again.</p>
+</div></div>
+${member ? '' : `<p class="message good">To join in, please <a href="/signin">sign in</a> or <a href="/join">join Lonely Oldies</a> first. You can also ring us on <span class="phone" style="font-size:1.1rem">${esc(phone)}</span> and press 6.</p>`}
+${rooms.map(roomCard).join('')}
+${member ? `<h2 id="new">Start a new group</h2>
+<p>Can't see your hobby? Start a group for it, and other members can join in.</p>
+<form method="post" action="/groups/new">${field(csrf)}
+<label for="name">What is the group about? <span class="hint">For example "Knitting" or "Classic films".</span></label>
+<input type="text" id="name" name="name" maxlength="40" required>
+<label for="description">Say a little more <span class="hint">You don't have to.</span></label>
+<input type="text" id="description" name="description" maxlength="200">
+<button>Start the group</button>
+</form>` : ''}`,
+    });
+  });
+
+  router.post('/groups/join', requireUser, handle(async (req, res) => {
+    const medium = req.body.medium === 'sms' ? 'sms' : 'voice';
+    const room = service.groups.getRoom(Number(req.body.room));
+    const result = await service.groups.join(req.user.id, Number(req.body.room), medium);
+    if (result.waiting) {
+      flash(req, `You're on the list for the ${room.name} group chat. We'll ${medium === 'sms' ? 'send you a text' : 'ring you'} when enough people are free.`);
+    } else {
+      flash(req, medium === 'sms' ? `You're in the ${room.name} group chat. We've sent you a text message.` : `We're ringing you now for the ${room.name} group chat.`);
+    }
+    res.redirect('/me');
+  }, '/groups'));
+
+  router.post('/groups/new', requireUser, handle(async (req, res) => {
+    const room = service.groups.createRoom(req.user.id, { name: req.body.name, description: req.body.description });
+    flash(req, `Your new group, ${room.name}, is ready. Press "Join in" to be the first on the list.`);
+    res.redirect(`/groups#room-${room.id}`);
+  }, '/groups#new'));
+
+  router.post('/me/leave-group', requireUser, handle(async (req, res) => {
+    const group = service.groups.activeFor(req.user.id);
+    if (group?.medium === 'sms') await service.groups.leaveText(group, req.user);
+    res.redirect('/me');
+  }, '/me'));
+
+  // People you were in a group chat with, so you can say which one upset you.
+  const groupOthers = (chatId, userId) => service.groups.everyone(chatId)
+    .filter((p) => p.user_id !== userId && p.joined_at);
+
+  router.get('/me/report-group', requireUser, (req, res) => {
+    const chat = service.groups.getChat(Number(req.query.chat));
+    if (!chat || !service.groups.participant(chat.id, req.user.id)) return res.redirect('/me');
+    const others = groupOthers(chat.id, req.user.id);
+    if (!others.length) return res.redirect('/me');
+    render(req, res, {
+      title: 'Tell us what happened', user: req.user, path: '/me',
+      body: `
+<h1>Tell us what happened</h1>
+<p>We're sorry something wasn't right in the ${esc(service.groups.roomName(chat))} group chat. Thank you for telling us.</p>
+<form method="post" action="/me/report-group">${field(req.session.csrf)}<input type="hidden" name="chat" value="${chat.id}">
+<fieldset style="border:none;padding:0;margin:0"><legend><strong>Who upset you?</strong></legend>
+${others.map((p, i) => `<label class="tick"><input type="radio" name="person" value="${p.user_id}"${i ? '' : ' required'}> ${esc(p.name)}</label>`).join('')}
+</fieldset>
+<div class="card sage with-pic">${pic('shield')}<div>
+<p>When you press the button, <strong>you will never be put in touch with them again</strong>. If the chat is still going on, we'll take them out of it. Our team will look into it.</p>
+</div></div>
+<label for="reason">What happened? <span class="hint">You don't have to write anything, but it helps us.</span></label>
+<textarea id="reason" name="reason" rows="5"></textarea>
+<button class="danger">Send, and stop all contact with them</button>
+</form>
+<a class="button secondary" href="/me">Go back</a>`,
+    });
+  });
+
+  router.post('/me/report-group', requireUser, handle(async (req, res) => {
+    const chatId = Number(req.body.chat);
+    const person = groupOthers(chatId, req.user.id).find((p) => p.user_id === Number(req.body.person));
+    if (!person) throw new UserError('Please choose the person who upset you.');
+    await service.groups.report(req.user.id, chatId, person.user_id, req.body.reason || 'Reported on the website after a group chat.');
+    flash(req, `Thank you for telling us. You won't be put in touch with ${person.name} again, and our team will look into it.`);
+    res.redirect('/me');
+  }, '/me'));
+
   // ---------- team page ----------
 
   const adminAuth = (req, res, next) => {
@@ -493,6 +649,9 @@ ${lastCallReport(user)}`,
   router.get('/admin', adminAuth, (req, res) => {
     const { reports, suspended, stats } = service.adminOverview();
     const stopped = service.texts.recentlyStopped();
+    const groupStopped = service.q(`SELECT m.*, u.name AS sender_name FROM group_messages m JOIN users u ON u.id = m.sender
+      WHERE m.delivered = 0 ORDER BY m.created_at DESC LIMIT 20`).all();
+    const rooms = service.groups.listRooms({ includeHidden: true });
     const csrf = req.session.csrf;
     const action = (path, id, label, cls = 'small') => `<form method="post" action="${path}" style="display:inline">${field(csrf)}
       <input type="hidden" name="id" value="${id}"><button class="${cls}">${label}</button></form>`;
@@ -500,12 +659,12 @@ ${lastCallReport(user)}`,
       title: 'Team',
       body: `
 <h1>Team page</h1>
-<p>${stats.users} members · ${stats.waiting} waiting · ${stats.live_calls} live calls · ${stats.total_calls} chats so far · ${stats.friendships} friendships</p>
+<p>${stats.users} members · ${stats.waiting} waiting · ${stats.live_calls} live calls · ${stats.live_groups} live group chats · ${stats.total_calls} chats so far · ${stats.friendships} friendships</p>
 <h2>Open reports</h2>
 ${reports.length ? `<table><tr><th>When</th><th>Reported</th><th>By</th><th>What happened</th><th></th></tr>
 ${reports.map((r) => `<tr><td>${esc(when(r.created_at))}</td>
 <td>${esc(r.reported_name)} (#${r.reported})<br>${esc(r.reported_status)} · ${r.total_against} report(s) in total</td>
-<td>${esc(r.reporter_name)} (#${r.reporter})</td><td><pre>${esc(r.reason)}</pre>${r.medium === 'sms' ? `<a href="/admin/chat/${r.call_id}">Read the text chat</a>` : ''}</td>
+<td>${r.reporter === r.reported ? 'Automatic (screening)' : `${esc(r.reporter_name)} (#${r.reporter})`}</td><td>${r.room_name ? `<p>${esc(r.room_name)} group chat (${r.medium === 'sms' ? 'text' : 'phone'})</p>` : ''}<pre>${esc(r.reason)}</pre>${r.group_chat_id ? `<a href="/admin/group/${r.group_chat_id}">See the group chat</a>` : r.medium === 'sms' ? `<a href="/admin/chat/${r.call_id}">Read the text chat</a>` : ''}</td>
 <td>${action('/admin/ban', r.reported, 'Ban', 'danger small')}${action('/admin/reinstate', r.reported, 'Clear all')}${action('/admin/dismiss', r.id, 'Dismiss this one', 'secondary small')}</td></tr>`).join('')}</table>`
     : '<p>No open reports.</p>'}
 <h2>Paused accounts</h2>
@@ -514,7 +673,46 @@ ${suspended.length ? suspended.map((u) => `<p>${esc(u.name)} (#${u.id}, ${esc(u.
 ${stopped.length ? `<table><tr><th>When</th><th>From</th><th>Message</th><th>Why</th></tr>
 ${stopped.map((m) => `<tr><td>${esc(when(m.created_at))}</td><td>${esc(m.sender_name)} (#${m.sender})</td>
 <td>${esc(m.body)}</td><td>${esc(m.screen_reason)}<br><a href="/admin/chat/${m.call_id}">Whole chat</a></td></tr>`).join('')}</table>`
-    : '<p>None.</p>'}`,
+    : '<p>None.</p>'}
+<h2>Group chats stopped by screening</h2>
+${groupStopped.length ? `<table><tr><th>When</th><th>From</th><th>Message</th><th>Why</th></tr>
+${groupStopped.map((m) => `<tr><td>${esc(when(m.created_at))}</td><td>${esc(m.sender_name)} (#${m.sender})</td>
+<td>${esc(m.body)}</td><td>${esc(m.screen_reason)}<br><a href="/admin/group/${m.chat_id}">Whole chat</a></td></tr>`).join('')}</table>`
+    : '<p>None.</p>'}
+<h2>Groups</h2>
+<table><tr><th>Group</th><th>Started by</th><th>Chats held</th><th></th></tr>
+${rooms.map((room) => `<tr><td><strong>${esc(room.name)}</strong><br>${esc(room.description)}</td>
+<td>${room.created_by ? `#${room.created_by}` : 'Lonely Oldies'}</td><td>${room.chats_held}${room.live.length ? ` (${room.live.length} live)` : ''}</td>
+<td>${room.hidden ? action('/admin/room-show', room.id, 'Show again') : action('/admin/room-hide', room.id, 'Hide', 'danger small')}</td></tr>`).join('')}</table>`,
+    });
+  });
+
+  router.post('/admin/room-hide', adminAuth, (req, res) => {
+    service.groups.setHidden(Number(req.body.id), true);
+    flash(req, 'Hidden. Members can no longer see or join this group.');
+    res.redirect('/admin');
+  });
+
+  router.post('/admin/room-show', adminAuth, (req, res) => {
+    service.groups.setHidden(Number(req.body.id), false);
+    res.redirect('/admin');
+  });
+
+  router.get('/admin/group/:id', adminAuth, (req, res) => {
+    const groups = service.groups;
+    const chat = groups.getChat(Number(req.params.id));
+    if (!chat) return res.redirect('/admin');
+    const lines = groups.transcript(chat.id);
+    render(req, res, {
+      title: 'Group chat',
+      body: `
+<h1>${esc(groups.roomName(chat))} group chat (${chat.medium === 'sms' ? 'text' : 'phone'})</h1>
+<p class="muted">Started ${esc(when(chat.started_at || chat.created_at))} · ${esc(chat.status)}. Messages are deleted after ${config.messageRetentionDays} days.</p>
+<p>People: ${groups.everyone(chat.id).map((p) => `${esc(p.name)} (#${p.user_id}, ${esc(p.state)})`).join(', ')}</p>
+${chat.medium === 'sms' ? (lines.length ? `<table><tr><th>When</th><th>From</th><th>Message</th><th>Passed on?</th></tr>
+${lines.map((m) => `<tr><td>${esc(when(m.created_at))}</td><td>${esc(m.sender_name)}</td><td>${esc(m.body)}</td>
+<td>${m.delivered ? 'Yes' : `No: ${esc(m.screen_reason)}`}</td></tr>`).join('')}</table>` : '<p>No messages kept.</p>') : '<p>Phone chats are not recorded.</p>'}
+<a class="button secondary" href="/admin">Back</a>`,
     });
   });
 

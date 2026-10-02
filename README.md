@@ -9,6 +9,7 @@ A phone-first service that puts older people through to each other for a friendl
 - **Get matched at random** with someone else who's free for the same kind of chat. For calls, the service rings you both from its own number and joins you in a private conference room. For text chats, you both text the service number and it passes each message on, so numbers stay private either way.
 - **Every text message is screened** before it's passed on. Phone numbers, email addresses, links, addresses, talk of money or bank details, and abusive words are stopped.
 - **Talk again** only if you *both* press 1 (or tap "Yes please") after the chat. You then appear as friends and can ring each other through the service, still without seeing numbers.
+- **Group chats** about a shared hobby or topic (gardening, books, music, "just a natter"…), by phone or text, with 3 to 6 people. Members can start new groups. See [Group chats](#group-chats).
 - **Stay safe**: press `*` to end a chat at any time; report someone afterwards (by phone or website) and they're blocked from you forever; two reports from different people pause their account; the team can ban a number for good.
 
 ## The website
@@ -82,9 +83,9 @@ Ring the service number:
   - 2: ring one of my friends (people who also said yes to talking again)
   - 3: I don't want calls for now
   - 4: tell us if you'd like to talk to your last chat partner again
-  - 9: report someone from your last chat
-
   - 5: put me in touch with someone new for a text message chat
+  - 6: join a group chat (choose a group from the list; we ring back when enough people are free)
+  - 9: report someone from your last chat
 
 After every phone chat: 1 = talk again, 2 = no thanks, 9 = report (blocks them, then lets you leave a spoken message for the team).
 
@@ -98,10 +99,25 @@ Members text the service number:
 | anything, during a chat | Screened, then passed on as "Margaret: …" |
 | `END` | Finish the chat; both are asked "chat again? Reply YES or NO" |
 | `YES` / `NO` | After a chat: would you like to chat again? When a friend asks for a text chat: start it or not |
+| `GROUPS` | A numbered list of group chats |
+| `JOIN 3` | Put me on the list for group 3 by text |
 | `REPORT` | Ends the chat (or reports your last chat), blocks them, and sends it to the team |
 | anything else | A short help message |
 
 Friends can also be texted from the website ("Text Arthur"). The friend gets a text asking them to reply YES first. Text chats close on their own after `SMS_CHAT_IDLE_HOURS` (12) without messages.
+
+## Group chats
+
+Rooms ("groups") are hobbies or topics. Nine starter groups are created on first run, members can start their own from the website (the name is screened like a text message, 2 new groups a day at most), and the team can hide any group from `/admin`.
+
+- **Joining** works like a one-to-one chat: say you're free, but for a particular group, by phone or by text. Website: "Group chats" page. Phone menu: press 6. Text: `GROUPS`, then `JOIN` and a number.
+- **Starting**: once `GROUP_MIN_SIZE` (3) people are waiting for the same group and the same kind of chat, the matcher starts one. Later arrivals are added to a chat that's already going, up to `GROUP_MAX_SIZE` (6). People who've blocked each other are never put in the same group chat.
+- **By phone**: everyone is rung from the service number and hears the group's name and the first names of the others; press 1 to join. They meet in a private conference `lonely-oldies-group-<id>`. The first in waits on hold. One person leaving (`*` or hanging up) doesn't end it for the rest. When only one person is left, they're told everyone else has gone (or, if it never got going, kept on the list).
+- **By text**: each message is screened and then sent to everyone else as "Gardening group, Margaret: …". `WHO` lists who's there, `LEAVE` leaves, `REPORT` and a name or number reports someone.
+- **Safety**: reporting someone in a group blocks them for you, takes them out of the chat at once, and counts towards pausing their account like any other report. 3 stopped messages take the sender out of the group and report them automatically. After a phone group chat, press 9 to report someone by name. Website: "Someone in this group upset me". The team page shows group reports, stopped group messages and the text of reported group chats.
+- Group chats count towards the daily chat limit. There's no "talk again" vote after a group chat; people who get on can meet again in the same group.
+
+**Costs**: a phone group chat is one outbound call leg per person plus conference minutes. A text group chat sends one text to each other person for every message, so a group of 6 costs 5 outbound texts per message.
 
 ## Safeguards
 
@@ -125,6 +141,7 @@ src/service.js    all the rules: accounts, matching, calls, talk-again, blocking
 src/voice.js      Twilio webhooks: phone menu and both sides of each call
 src/sms.js        Twilio webhook for incoming text messages
 src/textchat.js   text chats: matching, relaying, END/YES/NO/REPORT
+src/groups.js     group chats: rooms, joining, phone and text groups, reporting
 src/screening.js  the rules every text message is checked against
 src/web.js        website pages and team page
 src/telephony.js  Twilio provider and the test-mode stand-in

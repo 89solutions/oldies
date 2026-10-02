@@ -4,6 +4,7 @@
 
 import { tx } from './db.js';
 import { TextChats } from './textchat.js';
+import { Groups } from './groups.js';
 import {
   hashSecret, checkSecret, isValidPin, isWeakPin, sixDigitCode, normalizePhone, cleanName,
 } from './security.js';
@@ -21,6 +22,8 @@ export class Service {
     this.log = log;
     this.now = now;
     this.texts = new TextChats(this);
+    this.groups = new Groups(this);
+    this.groups.ensureStarterRooms();
     this.onAvailable = null; // set by the app so matching runs straight away
   }
 
@@ -181,7 +184,8 @@ export class Service {
   }
 
   // medium: 'voice' for a phone call, 'sms' for a text-message chat.
-  setAvailable(userId, on, medium = 'voice') {
+  // roomId: set when they're waiting for a group chat rather than a one-to-one chat.
+  setAvailable(userId, on, medium = 'voice', roomId = null) {
     const user = this.getUser(userId);
     if (on) {
       if (!this.canUse(user)) throw new UserError(this.blockedReason(user));
@@ -191,9 +195,10 @@ export class Service {
     }
     const until = on ? this.now() + this.config.availableForMinutes * 60 * 1000 : null;
     if (on) {
-      this.q('UPDATE users SET available_until = ?, available_medium = ? WHERE id = ?').run(until, medium === 'sms' ? 'sms' : 'voice', userId);
+      this.q('UPDATE users SET available_until = ?, available_medium = ?, available_room = ? WHERE id = ?')
+        .run(until, medium === 'sms' ? 'sms' : 'voice', roomId ?? null, userId);
     } else {
-      this.q('UPDATE users SET available_until = NULL WHERE id = ?').run(userId);
+      this.q('UPDATE users SET available_until = NULL, available_room = NULL WHERE id = ?').run(userId);
     }
     return until;
   }
@@ -205,13 +210,22 @@ export class Service {
     return 'Sorry, something went wrong.';
   }
 
+  // One-to-one chats and group chats both count towards the daily limit.
   callsToday(userId) {
-    return this.q(`SELECT COUNT(*) AS n FROM calls WHERE (user_a = ? OR user_b = ?) AND started_at > ?`)
-      .get(userId, userId, this.now() - DAY).n;
+    const since = this.now() - DAY;
+    return this.q(`SELECT
+        (SELECT COUNT(*) FROM calls WHERE (user_a = ? OR user_b = ?) AND started_at > ?)
+      + (SELECT COUNT(*) FROM group_participants WHERE user_id = ? AND joined_at > ?) AS n`)
+      .get(userId, userId, since, userId, since).n;
   }
 
   activeCall(userId) {
     return this.q(`SELECT * FROM calls WHERE (user_a = ? OR user_b = ?) AND ${ACTIVE_CALL}`).get(userId, userId);
+  }
+
+  // In any chat at all: one-to-one or group.
+  busy(userId) {
+    return this.activeCall(userId) || this.groups.activeFor(userId);
   }
 
   isBlockedPair(a, b) {
@@ -240,9 +254,11 @@ export class Service {
 
   waitingFor(medium) {
     return this.q(`SELECT id FROM users WHERE status = 'active' AND verified = 1 AND available_until > ?
-      AND available_medium = ?
+      AND available_medium = ? AND available_room IS NULL
       AND id NOT IN (SELECT user_a FROM calls WHERE ${ACTIVE_CALL})
-      AND id NOT IN (SELECT user_b FROM calls WHERE ${ACTIVE_CALL})`).all(this.now(), medium).map((r) => r.id);
+      AND id NOT IN (SELECT user_b FROM calls WHERE ${ACTIVE_CALL})
+      AND id NOT IN (SELECT p.user_id FROM group_participants p JOIN group_chats g ON g.id = p.chat_id
+        WHERE p.state IN ('dialing','joined') AND g.status IN ('dialing','in_progress'))`).all(this.now(), medium).map((r) => r.id);
   }
 
   pairUp(waiting, random) {
@@ -294,6 +310,7 @@ export class Service {
     this.q(`UPDATE calls SET status = 'completed', ended_at = ? WHERE medium = 'voice' AND status = 'in_progress' AND started_at < ?`)
       .run(now, now - (this.config.maxCallMinutes + 10) * 60 * 1000);
     await this.texts.closeQuiet();
+    await this.groups.closeStale();
   }
 
   async runMatchmaker(random) {
@@ -305,6 +322,11 @@ export class Service {
       } catch (err) {
         this.log.error?.('Could not start call', err);
       }
+    }
+    try {
+      await this.groups.match();
+    } catch (err) {
+      this.log.error?.('Could not start group chat', err);
     }
     return started;
   }
@@ -319,7 +341,7 @@ export class Service {
   // person A is already on the line (they rang the phone menu), so only B is rung.
   async startCall(kind, a, b, { aSid } = {}) {
     const callId = tx(this.db, () => {
-      if (this.activeCall(a) || this.activeCall(b)) throw new UserError('One of you is already on a call.');
+      if (this.busy(a) || this.busy(b)) throw new UserError('One of you is already on a call.');
       // Matched people stop waiting, so they aren't matched twice.
       this.q('UPDATE users SET available_until = NULL WHERE id IN (?, ?)').run(a, b);
       return Number(this.q('INSERT INTO calls (kind, user_a, user_b, a_sid, created_at) VALUES (?, ?, ?, ?, ?)')
@@ -491,8 +513,8 @@ export class Service {
     if (this.callsToday(userId) >= this.config.maxCallsPerDay) {
       throw new UserError("You've had lots of chats today. Please come back tomorrow.");
     }
-    if (this.activeCall(userId)) throw new UserError("You're already in a chat. Please finish it first.");
-    if (this.activeCall(friendId)) throw new UserError(`${friend.name} is in another chat. Please try again later.`);
+    if (this.busy(userId)) throw new UserError("You're already in a chat. Please finish it first.");
+    if (this.busy(friendId)) throw new UserError(`${friend.name} is in another chat. Please try again later.`);
     return medium === 'sms' ? this.texts.start('reconnect', userId, friendId) : this.startCall('reconnect', userId, friendId, opts);
   }
 
@@ -524,12 +546,21 @@ export class Service {
         },
       });
     }
-    const reporters = this.q(`SELECT COUNT(DISTINCT reporter) AS n FROM reports WHERE reported = ? AND status = 'open'`)
-      .get(other.id).n;
-    if (reporters >= this.config.reportSuspendThreshold && other.status === 'active') {
-      await this.suspend(other.id);
-    }
+    await this.checkReports(other.id);
     return { reportId, reported: other };
+  }
+
+  // Pauses an account once enough different people have reported it. Automatic
+  // reports from message screening count as one extra reporter.
+  async checkReports(userId) {
+    const user = this.getUser(userId);
+    const { people, automatic } = this.q(`SELECT
+        COUNT(DISTINCT CASE WHEN reporter != reported THEN reporter END) AS people,
+        MAX(CASE WHEN reporter = reported THEN 1 ELSE 0 END) AS automatic
+      FROM reports WHERE reported = ? AND status = 'open'`).get(userId);
+    if (people + (automatic ?? 0) >= this.config.reportSuspendThreshold && user?.status === 'active') {
+      await this.suspend(userId);
+    }
   }
 
   addToReport(reportId, userId, extra) {
@@ -537,7 +568,9 @@ export class Service {
   }
 
   async suspend(userId) {
-    this.q(`UPDATE users SET status = 'suspended', available_until = NULL WHERE id = ?`).run(userId);
+    this.q(`UPDATE users SET status = 'suspended', available_until = NULL, available_room = NULL WHERE id = ?`).run(userId);
+    const group = this.groups.activeFor(userId);
+    if (group) await this.groups.remove(group, userId);
     const live = this.activeCall(userId);
     if (live?.medium === 'sms') await this.texts.end(live);
     else if (live) for (const sid of [live.a_sid, live.b_sid]) if (sid) await this.telephony.hangUp(sid);
@@ -550,7 +583,9 @@ export class Service {
     return {
       reports: this.q(`SELECT r.*, a.name AS reporter_name, b.name AS reported_name, b.status AS reported_status,
           (SELECT COUNT(*) FROM reports x WHERE x.reported = r.reported) AS total_against,
-          (SELECT medium FROM calls c WHERE c.id = r.call_id) AS medium
+          COALESCE((SELECT medium FROM calls c WHERE c.id = r.call_id),
+            (SELECT medium FROM group_chats g WHERE g.id = r.group_chat_id)) AS medium,
+          (SELECT x.name FROM group_chats g JOIN rooms x ON x.id = g.room_id WHERE g.id = r.group_chat_id) AS room_name
         FROM reports r JOIN users a ON a.id = r.reporter JOIN users b ON b.id = r.reported
         WHERE r.status = 'open' ORDER BY r.created_at DESC`).all(),
       suspended: this.q(`SELECT id, name, phone, created_at FROM users WHERE status = 'suspended'`).all(),
@@ -558,6 +593,7 @@ export class Service {
           (SELECT COUNT(*) FROM users WHERE verified = 1) AS users,
           (SELECT COUNT(*) FROM users WHERE available_until > ?) AS waiting,
           (SELECT COUNT(*) FROM calls WHERE ${ACTIVE_CALL}) AS live_calls,
+          (SELECT COUNT(*) FROM group_chats WHERE ${ACTIVE_CALL}) AS live_groups,
           (SELECT COUNT(*) FROM calls WHERE started_at IS NOT NULL) AS total_calls,
           (SELECT COUNT(*) FROM connections) AS friendships`).get(this.now()),
     };

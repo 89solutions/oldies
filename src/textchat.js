@@ -32,7 +32,7 @@ export class TextChats {
     const s = this.service;
     const now = s.now();
     const callId = tx(s.db, () => {
-      if (s.activeCall(a) || s.activeCall(b)) throw new UserError('One of you is already in a chat.');
+      if (s.busy(a) || s.busy(b)) throw new UserError('One of you is already in a chat.');
       this.q('UPDATE users SET available_until = NULL WHERE id IN (?, ?)').run(a, b);
       const started = kind === 'random';
       return Number(this.q(`INSERT INTO calls (kind, medium, user_a, user_b, status, a_state, b_state, started_at,
@@ -89,7 +89,12 @@ export class TextChats {
   }
 
   helpText() {
-    return `Lonely Oldies: text FREE to be put in touch with someone for a text chat. To chat on the phone instead, ring ${this.config.publicPhoneNumber}.`;
+    return `Lonely Oldies: text FREE to be put in touch with someone for a text chat, or GROUPS to chat with a group about a hobby. To chat on the phone instead, ring ${this.config.publicPhoneNumber}.`;
+  }
+
+  groupList() {
+    const rooms = this.service.groups.menuRooms();
+    return `Lonely Oldies group chats. Text JOIN and a number to join in: ${rooms.map((r, i) => `${i + 1} ${r.name}`).join(', ')}.`;
   }
 
   // Every text sent to the service number arrives here.
@@ -106,11 +111,30 @@ export class TextChats {
     const body = String(text ?? '').trim();
     const word = body.toUpperCase().replace(/[^A-Z]/g, '');
     const live = s.activeCall(user.id);
+    const group = live ? null : s.groups.activeFor(user.id);
 
-    if (live?.medium === 'voice') {
+    if (live?.medium === 'voice' || group?.medium === 'voice') {
       return this.send(user, "Lonely Oldies: you're on a phone chat at the moment. Text us again afterwards.");
     }
     if (live) return this.inChat(live, user, body, word);
+    if (group) return s.groups.incomingText(group, user, body, word);
+
+    if (word === 'GROUPS' || word === 'GROUP') return this.send(user, this.groupList());
+    const joinMatch = body.match(/^join\s*(\d+)$/i);
+    if (joinMatch || word === 'JOIN') {
+      const room = joinMatch && s.groups.menuRooms()[Number(joinMatch[1]) - 1];
+      if (!room) return this.send(user, this.groupList());
+      try {
+        const result = await s.groups.join(user.id, room.id, 'sms');
+        if (result.waiting) {
+          await this.send(user, `Lonely Oldies: you're on the list for the ${room.name} group chat. We'll text you as soon as enough people are free. Text BUSY if you change your mind.`);
+        }
+      } catch (err) {
+        if (err instanceof UserError) return this.send(user, `Lonely Oldies: ${err.message}`);
+        throw err;
+      }
+      return;
+    }
 
     if (word === 'REPORT') {
       const last = s.lastCall(user.id);

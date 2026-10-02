@@ -110,6 +110,7 @@ pre { white-space: pre-wrap; font-size: .7rem; background: var(--sage); padding:
 
 const MENU = [
   ['/', 'Home'],
+  ['/groups', 'Group chats'],
   ['/how-it-works', 'How it works'],
   ['/safety', 'Staying safe'],
   ['/questions', 'Questions'],
