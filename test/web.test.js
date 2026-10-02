@@ -33,7 +33,7 @@ test('joining on the website, confirming by text, and saying you are free', asyn
   const t = await setup();
   try {
     const b = browser(t);
-    let res = await b.post('/join', { name: 'Margaret', phone: '07700 900091', pin: '2468', agree: '1' });
+    let res = await b.post('/join', { name: 'Margaret', phone: '07700 900091', pin: '2468', pin2: '2468', agree: '1' });
     assert.equal(res.location, '/verify');
     const code = t.telephony.sms.at(-1).body.match(/\d{6}/)[0];
     res = await b.post('/verify', { code });
@@ -42,7 +42,7 @@ test('joining on the website, confirming by text, and saying you are free', asyn
     assert.match(me.text, /Hello Margaret/);
     await b.post('/me/available', { on: '1' });
     me = await b.get('/me');
-    assert.match(me.text, /on the list for a chat/);
+    assert.match(me.text, /on the list for a chat\./);
   } finally {
     t.close();
   }
@@ -104,7 +104,43 @@ test('choosing a text chat on the website, and ending it from there', async () =
     assert.match(me.text, /in a text chat with Arthur/);
     await b.post('/me/end-text-chat', {});
     me = await b.get('/me');
-    assert.match(me.text, /Would you like to talk to Arthur again/);
+    assert.match(me.text, /Would you like to chat with Arthur again/);
+  } finally {
+    t.close();
+  }
+});
+
+test('information pages, pictures and the bigger-text setting all work', async () => {
+  const t = await setup();
+  try {
+    for (const [path, heading] of [['/', 'A friendly chat'], ['/how-it-works', 'How it works'], ['/safety', 'Staying safe'], ['/questions', 'Questions']]) {
+      const res = await fetch(t.base + path);
+      assert.equal(res.status, 200, path);
+      assert.match(await res.text(), new RegExp(`<h1>${heading}`), path);
+    }
+    const img = await fetch(`${t.base}/images/hero.svg`);
+    assert.equal(img.status, 200);
+    assert.match(img.headers.get('content-type'), /svg/);
+
+    const b = browser(t);
+    assert.doesNotMatch((await b.get('/')).text, /class="bigger"/);
+    const res = await b.get('/text-size?big=1&back=/questions');
+    assert.equal(res.location, '/questions');
+    assert.match((await b.get('/questions')).text, /class="bigger"/);
+    assert.equal((await b.get('/text-size?big=1&back=//evil.example')).location, '/');
+  } finally {
+    t.close();
+  }
+});
+
+test('typing two different PINs when joining is caught', async () => {
+  const t = await setup();
+  try {
+    const b = browser(t);
+    const res = await b.post('/join', { name: 'Joan', phone: '07700 900096', pin: '2468', pin2: '2469', agree: '1' });
+    assert.equal(res.location, '/join');
+    assert.match((await b.get('/join')).text, /two PINs you typed are different/);
+    assert.equal(t.service.getUserByPhone('+447700900096'), undefined);
   } finally {
     t.close();
   }

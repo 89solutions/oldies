@@ -1,6 +1,6 @@
 import express from 'express';
 import cookieSession from 'cookie-session';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { openDb } from './db.js';
 import { createTelephony } from './telephony.js';
@@ -40,6 +40,7 @@ export function createApp({ config = loadConfig(), db, telephony, log = console,
   });
 
   service.onAvailable = runMatchmaker;
+  app.use('/images', express.static(fileURLToPath(new URL('../public/images', import.meta.url)), { maxAge: '7d' }));
   app.use('/voice', voiceRouter({ service, config, log, onAvailable: runMatchmaker }));
   app.use('/sms', smsRouter({ service, config, log }));
 

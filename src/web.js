@@ -1,27 +1,35 @@
 import express from 'express';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { UserError } from './service.js';
-import { page, field, errorBox, noticeBox, esc, when } from './views.js';
+import { page, field, errorBox, noticeBox, esc, when, timeOfDay } from './views.js';
+
+// The words on these pages are written for people who don't use computers
+// much: short sentences, everyday words, no technical terms.
 
 export function webRouter({ service, config, log = console, onAvailable = () => {} }) {
   const router = express.Router();
   router.use(express.urlencoded({ extended: false }));
+  const phone = config.publicPhoneNumber;
 
   // Every form carries a token tied to the visitor's session.
   router.use((req, res, next) => {
     req.session.csrf ||= randomBytes(16).toString('hex');
     if (req.method === 'POST' && req.body._csrf !== req.session.csrf) {
-      return res.status(403).send(page({ title: 'Please try again', body: '<h1>Please go back and try again.</h1>' }));
+      return res.status(403).send(page({
+        title: 'Please try again', phone,
+        body: '<h1>Sorry, that didn\'t work</h1><p>Please go back to the page before and try again.</p><a class="button" href="/">Go to the first page</a>',
+      }));
     }
     next();
   });
 
   const render = (req, res, opts) => {
-    const flash = req.session.flash;
+    const message = req.session.flash;
     delete req.session.flash;
-    res.send(page({ ...opts, csrf: req.session.csrf, body: noticeBox(flash) + opts.body }));
+    const box = message ? (message.bad ? errorBox(message.text) : noticeBox(message.text ?? message)) : '';
+    res.send(page({ ...opts, csrf: req.session.csrf, big: Boolean(req.session.big), phone, path: opts.path ?? req.path, body: box + opts.body }));
   };
-  const flash = (req, msg) => { req.session.flash = msg; };
+  const flash = (req, text, { bad = false } = {}) => { req.session.flash = { text, bad }; };
   const currentUser = (req) => (req.session.userId ? service.getUser(req.session.userId) : null);
 
   function requireUser(req, res, next) {
@@ -39,66 +47,175 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
       await fn(req, res);
     } catch (err) {
       if (!(err instanceof UserError)) log.error?.(err);
-      flash(req, err instanceof UserError ? err.message : 'Sorry, something went wrong. Please try again.');
+      flash(req, err instanceof UserError ? err.message : 'Sorry, something went wrong. Please try again.', { bad: true });
       res.redirect(back);
     }
   };
 
-  // ---------- public pages ----------
+  const pic = (name) => `<img src="/images/${name}.svg" alt="">`;
+  const practiceNote = (what) => (config.telephony === 'mock'
+    ? `<p class="message good">Practice mode: no real text message was sent. ${what} is shown on the <a href="/dev/simulator">practice page</a>.</p>` : '');
+
+  // "Make the text bigger" link, remembered for this visitor.
+  router.get('/text-size', (req, res) => {
+    req.session.big = req.query.big === '1';
+    const back = String(req.query.back || '/');
+    res.redirect(back.startsWith('/') && !back.startsWith('//') ? back : '/');
+  });
+
+  // ---------- pages anyone can see ----------
 
   router.get('/', (req, res) => {
     if (currentUser(req)) return res.redirect('/me');
     render(req, res, {
-      title: 'Welcome',
+      title: 'A friendly chat',
       body: `
+<div class="hero">
 <h1>A friendly chat, whenever you'd like one</h1>
-<p>Lonely Oldies puts you in touch with another person for a chat, on the phone or by text message.</p>
-<p><strong>Your phone number is always kept private.</strong> We ring you both from our own number, so nobody ever sees yours.</p>
+<p class="lead">Lonely Oldies puts you in touch with someone new for a friendly chat, on the phone or by text message.</p>
+<img src="/images/hero.svg" alt="Two older people smiling as they chat on the phone from their armchairs">
+</div>
+<div class="card sage with-pic">${pic('shield')}<div>
+<p><strong>Your phone number stays private.</strong></p>
+<p>We ring you both from our own number, so nobody ever sees yours.</p>
+</div></div>
 <a class="button" href="/join">Join Lonely Oldies</a>
-<a class="button secondary" href="/signin">I've already joined</a>
-<h2>Prefer the phone?</h2>
-<p>Ring us any time and follow the instructions. You can join, or say you're free for a chat.</p>
-<p class="phone">${esc(config.publicPhoneNumber)}</p>`,
+<a class="button secondary" href="/signin">I've joined before. Sign in</a>
+
+<h2>How it works</h2>
+<ol class="steps">
+<li>${pic('hand')}<div><h3>Tell us you're free</h3><p>Press one button, or ring us.</p></div></li>
+<li>${pic('ring')}<div><h3>We ring you</h3><p>When someone else is free, we ring you both and put you through.</p></div></li>
+<li>${pic('heart')}<div><h3>Chat again if you like</h3><p>If you both enjoyed it, you can chat again another day.</p></div></li>
+</ol>
+<a class="button secondary" href="/how-it-works">Find out more</a>
+
+<h2>Rather use the telephone?</h2>
+<p>You don't need a computer. Ring us on</p>
+<p class="phone">${esc(phone)}</p>
+<p>A friendly recorded voice will guide you. You can join, and say you're free for a chat, just by pressing the numbers on your phone.</p>`,
     });
   });
+
+  router.get('/how-it-works', (req, res) => render(req, res, {
+    title: 'How it works', user: currentUser(req),
+    body: `
+<h1>How it works</h1>
+<p class="lead">It's simple, and you can do it all with an ordinary telephone.</p>
+<ol class="steps">
+<li>${pic('hand')}<div><h3>1. Tell us you're free</h3>
+<p>Press the button on your page, or ring us. Choose a chat on the phone or a chat by text message.</p></div></li>
+<li>${pic('ring')}<div><h3>2. We put you in touch</h3>
+<p>When someone else is free, we ring you. We tell you their first name. Press 1 on your phone to start chatting, or 2 if now isn't a good time.</p></div></li>
+<li>${pic('chat')}<div><h3>3. Have a chat</h3>
+<p>Chat for as long as you like, up to ${Math.round(config.maxCallMinutes)} minutes. When you've finished, just put the phone down.</p></div></li>
+<li>${pic('heart')}<div><h3>4. Chat again if you both want to</h3>
+<p>Afterwards, we ask if you'd like to chat to them again. If you both say yes, you can ring each other through us whenever you like.</p></div></li>
+</ol>
+
+<div class="card sky with-pic">${pic('text')}<div>
+<h2>Prefer writing to talking?</h2>
+<p>Choose a chat by text message. You send your messages to our number, and we pass them on with your first name.</p>
+<p>When you've finished, send a text that just says <strong>END</strong>.</p>
+</div></div>
+
+<div class="card sage with-pic">${pic('shield')}<div>
+<h2>Your number stays private</h2>
+<p>Every call and text message goes through Lonely Oldies. The other person never sees your phone number, and you never see theirs. They only know your first name.</p>
+</div></div>
+
+<h2>What you need</h2>
+<ul class="tips">
+<li>A telephone. A landline is fine for phone chats.</li>
+<li>A mobile phone if you'd like to chat by text message.</li>
+</ul>
+<p>That's all. A family member or friend is very welcome to help you join.</p>
+<a class="button" href="${currentUser(req) ? '/me' : '/join'}">${currentUser(req) ? 'Go to your page' : 'Join Lonely Oldies'}</a>`,
+  }));
 
   router.get('/safety', (req, res) => render(req, res, {
     title: 'Staying safe', user: currentUser(req),
     body: `
 <h1>Staying safe</h1>
+<div class="card sage with-pic">${pic('shield')}<div>
+<p class="lead">We've made Lonely Oldies as safe as we can. Here's how we look after you, and how you can look after yourself.</p>
+</div></div>
+<h2>How we look after you</h2>
 <ul class="tips">
-<li>We never give anyone your phone number, and you never see theirs.</li>
+<li>Nobody ever sees your phone number, and you never see theirs.</li>
 <li>Only your first name is shared.</li>
-<li>Never tell anyone your address, bank details, PIN or passwords.</li>
-<li>Nobody from Lonely Oldies will ever ask you for money or your PIN.</li>
-<li>If a phone chat makes you uncomfortable, press the <strong>star key (*)</strong> to end it straight away.</li>
-<li>In a text chat, text <strong>END</strong> to finish or <strong>REPORT</strong> if anything upsets you.</li>
-<li>Every text message is checked before it is passed on. Messages with phone numbers, addresses, web links, anything about money, or unkind words are stopped.</li>
-<li>After a chat you can report someone. They are blocked from ever reaching you again, and our team will look into it.</li>
-<li>If someone is reported by more than one person, their account is paused straight away.</li>
-<li>If you are ever in danger, ring the emergency services.</li>
+<li>Every text message is checked before we pass it on. Messages with phone numbers, addresses, anything about money, or unkind words are stopped.</li>
+<li>If you tell us someone upset you, you will never be put in touch with them again, and our team will look into it.</li>
+<li>If more than one person tells us about someone, we stop them using Lonely Oldies straight away.</li>
 </ul>
-<a class="button secondary" href="/">Back</a>`,
+<h2>How to look after yourself</h2>
+<ul class="tips">
+<li>Never tell anyone your address, your bank details, your PIN or any passwords.</li>
+<li>Never send money to anyone you meet here, whatever reason they give.</li>
+<li><strong>Nobody from Lonely Oldies will ever ask you for money or your PIN.</strong></li>
+</ul>
+<h2>If a chat doesn't feel right</h2>
+<ul class="tips">
+<li>On the phone: press the <strong>star key (*)</strong>, or just put the phone down. Afterwards, press <strong>9</strong> to tell us.</li>
+<li>By text message: send a text that just says <strong>REPORT</strong>.</li>
+<li>On your page: press "Something wasn't right" under the chat.</li>
+</ul>
+<p>If you are ever in danger, ring 999.</p>`,
   }));
+
+  router.get('/questions', (req, res) => {
+    const qa = [
+      ['Will anyone see my phone number?', 'No. We ring you both from our own number, and text messages go through us too. The other person never sees your number.'],
+      ['What will the other person know about me?', 'Only your first name. Everything else is up to you, and we suggest you keep your address and money matters to yourself.'],
+      ['Who will I be chatting to?', 'Another member of Lonely Oldies who is free for a chat at the same time as you. We choose at random, so it may be someone new each time.'],
+      ['What if I miss the call?', "That's fine. Nobody minds. Just tell us you're free again when it suits you."],
+      ["What if I don't want to chat when you ring?", "Press 2 when we ring and we'll say goodbye politely. The other person isn't told why."],
+      ['How do I end a chat?', 'On the phone, just put the phone down, or press the star key (*). In a text chat, send a text that just says END.'],
+      ['Can I chat to the same person again?', "Yes, if you both want to. After each chat we ask you both. If you both say yes, they'll appear on your page and you can ring or text them through us."],
+      ['What if someone is unkind to me?', "Tell us straight away. After a phone chat, press 9. In a text chat, send REPORT. You'll never be put in touch with them again, and our team will look into it."],
+      ['Do you listen to the calls?', 'No. Phone calls are not recorded.'],
+      ['Do you read the text messages?', 'Every text message is checked by our system to keep everyone safe. They are kept for 30 days, so our team can look into it if someone tells us about a problem, and then deleted.'],
+      ["I've forgotten my PIN", 'No problem. Press "Sign in", then "I\'ve forgotten my PIN", and we\'ll send you a text message to help you choose a new one.'],
+      ['Can a family member help me?', "Of course. They're very welcome to help you join and to show you how it works."],
+      ['Can I use a landline?', 'Yes, for phone chats. To chat by text message you need a mobile phone.'],
+    ];
+    render(req, res, {
+      title: 'Questions', user: currentUser(req),
+      body: `
+<h1>Questions</h1>
+<p class="lead">Press a question to see the answer.</p>
+<div class="faq">${qa.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>
+<p>Can't find your answer? Ring us on <span class="phone">${esc(phone)}</span></p>`,
+    });
+  });
+
+  // ---------- joining and signing in ----------
 
   router.get('/join', (req, res) => render(req, res, {
     title: 'Join',
     body: `
 <h1>Join Lonely Oldies</h1>
+<p class="muted">Step 1 of 2</p>
+<p>It only takes a few minutes. A family member or friend is welcome to help.</p>
 <form method="post" action="/join">${field(req.session.csrf)}
-<label for="name">Your first name <span class="hint">(this is all anyone else sees)</span></label>
+<label for="name">Your first name <span class="hint">This is the only thing other people will know about you.</span></label>
 <input id="name" name="name" type="text" autocomplete="given-name" required>
-<label for="phone">Your phone number <span class="hint">(we'll ring you on this)</span></label>
+<label for="phone">Your phone number <span class="hint">This is the number we'll ring. Nobody else will see it.</span></label>
 <input id="phone" name="phone" type="tel" autocomplete="tel" required>
-<label for="pin">Choose a 4 number PIN <span class="hint">(you'll use it to sign in and when you ring us)</span></label>
-<input id="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
-<label><input type="checkbox" name="agree" value="1" required> I have read <a href="/safety" target="_blank">staying safe</a> and agree to be kind to the people I talk to.</label>
-<button>Join</button>
+<label for="pin">Choose a PIN of 4 numbers <span class="hint">Like the PIN for a bank card. You'll use it to sign in, and when you ring us. Please don't use one that's easy to guess, like 1234.</span></label>
+<input id="pin" name="pin" class="short" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
+<label for="pin2">Type the same 4 numbers again</label>
+<input id="pin2" name="pin2" class="short" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
+<label class="tick"><input type="checkbox" name="agree" value="1" required><span>I have read <a href="/safety" target="_blank">Staying safe</a>, and I'll be kind to the people I chat to.</span></label>
+<button>Carry on</button>
 </form>`,
   }));
 
   router.post('/join', handle(async (req, res) => {
-    if (req.body.agree !== '1') throw new UserError('Please tick the box to agree to be kind.');
+    if (req.body.agree !== '1') throw new UserError('Please tick the box to say you will be kind.');
+    if (req.body.pin2 !== undefined && req.body.pin2 !== req.body.pin) {
+      throw new UserError("The two PINs you typed are different. Please type them again.");
+    }
     const user = await service.register(req.body);
     req.session.userId = user.id;
     res.redirect('/verify');
@@ -111,27 +228,32 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
     render(req, res, {
       title: 'Check your phone',
       body: `
-<h1>We've sent you a text message</h1>
-<p>Please type in the 6 number code we sent to your phone.</p>
-${config.telephony === 'mock' ? '<p class="notice">Test mode: no real text was sent. The code is shown on the <a href="/dev/simulator">simulator page</a>.</p>' : ''}
+<h1>Please check your phone</h1>
+<p class="muted">Step 2 of 2</p>
+<div class="card sky with-pic">${pic('text')}<div>
+<p>We have just sent a text message to your phone. It has <strong>6 numbers</strong> in it.</p>
+<p>This lets us check the phone is yours.</p>
+</div></div>
+${practiceNote('The message')}
 <form method="post" action="/verify">${field(req.session.csrf)}
-<label for="code">Code</label>
-<input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required>
+<label for="code">Type the 6 numbers here</label>
+<input id="code" name="code" class="short" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required>
 <button>Carry on</button>
 </form>
-<form method="post" action="/verify/resend">${field(req.session.csrf)}<button class="secondary">Send me a new code</button></form>`,
+<p>Not arrived yet? It can take a minute or two.</p>
+<form method="post" action="/verify/resend">${field(req.session.csrf)}<button class="secondary">Send it again</button></form>`,
     });
   });
 
   router.post('/verify', handle(async (req, res) => {
     service.verifyPhone(req.session.userId, req.body.code);
-    flash(req, "You're all set up. Welcome!");
+    flash(req, "That's it, you've joined. Welcome to Lonely Oldies!");
     res.redirect('/me');
   }, '/verify'));
 
   router.post('/verify/resend', handle(async (req, res) => {
     await service.resendCode(req.session.userId);
-    flash(req, "We've sent a new code.");
+    flash(req, "We've sent you another text message.");
     res.redirect('/verify');
   }, '/verify'));
 
@@ -139,14 +261,16 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: no real text was s
     title: 'Sign in',
     body: `
 <h1>Sign in</h1>
+<p>Welcome back. Please type in your phone number and your PIN.</p>
 <form method="post" action="/signin">${field(req.session.csrf)}
 <label for="phone">Your phone number</label>
 <input id="phone" name="phone" type="tel" autocomplete="tel" required>
-<label for="pin">Your 4 number PIN</label>
-<input id="pin" name="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" required>
+<label for="pin">Your PIN <span class="hint">The 4 numbers you chose when you joined.</span></label>
+<input id="pin" name="pin" class="short" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" required>
 <button>Sign in</button>
 </form>
-<a class="button secondary" href="/forgot">I've forgotten my PIN</a>`,
+<a class="button secondary" href="/forgot">I've forgotten my PIN</a>
+<p>Not joined yet? <a href="/join">Join Lonely Oldies</a></p>`,
   }));
 
   router.post('/signin', handle(async (req, res) => {
@@ -159,21 +283,23 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: no real text was s
     title: 'Forgotten PIN',
     body: req.session.resetPhone ? `
 <h1>Choose a new PIN</h1>
-<p>We've sent a text message with a 6 number code to your phone.</p>
-${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown on the <a href="/dev/simulator">simulator page</a>.</p>' : ''}
+<div class="card sky with-pic">${pic('text')}<div>
+<p>We have just sent a text message to your phone. It has <strong>6 numbers</strong> in it.</p>
+</div></div>
+${practiceNote('The message')}
 <form method="post" action="/forgot/finish">${field(req.session.csrf)}
-<label for="code">Code from the text message</label>
-<input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required>
-<label for="pin">Your new 4 number PIN</label>
-<input id="pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
+<label for="code">Type the 6 numbers here</label>
+<input id="code" name="code" class="short" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="7" required>
+<label for="pin">Choose a new PIN of 4 numbers</label>
+<input id="pin" name="pin" class="short" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
 <button>Save my new PIN</button>
 </form>` : `
 <h1>Forgotten your PIN?</h1>
-<p>Type in your phone number and we'll send you a text message with a code.</p>
+<p>Don't worry, it happens to everyone. Type in your phone number and we'll send you a text message to help you choose a new one.</p>
 <form method="post" action="/forgot">${field(req.session.csrf)}
 <label for="phone">Your phone number</label>
 <input id="phone" name="phone" type="tel" autocomplete="tel" required>
-<button>Send me a code</button>
+<button>Send me a text message</button>
 </form>`,
   }));
 
@@ -187,7 +313,7 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown 
     const user = service.finishPinReset(req.session.resetPhone, req.body.code, req.body.pin);
     delete req.session.resetPhone;
     req.session.userId = user.id;
-    flash(req, 'Your new PIN is saved. Please keep it somewhere safe.');
+    flash(req, 'Your new PIN is saved. Please keep it somewhere safe and never tell it to anyone.');
     res.redirect('/me');
   }, '/forgot'));
 
@@ -196,7 +322,7 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown 
     res.redirect('/');
   });
 
-  // ---------- signed-in pages ----------
+  // ---------- the member's own page ----------
 
   router.get('/me', requireUser, (req, res) => {
     const user = req.user;
@@ -205,73 +331,76 @@ ${config.telephony === 'mock' ? '<p class="notice">Test mode: the code is shown 
     const friends = service.listFriends(user.id);
     const pending = service.pendingFeedback(user.id);
     const csrf = req.session.csrf;
+    const form = (action, inner, extra = '') => `<form method="post" action="${action}">${field(csrf)}${extra}${inner}</form>`;
 
     let status;
     if (user.status !== 'active') {
-      status = `<div class="card status"><p>${esc(service.blockedReason(user))}</p></div>`;
+      status = `<div class="card peach"><p>${esc(service.blockedReason(user))}</p></div>`;
     } else if (live?.medium === 'sms') {
       const other = service.otherPartyFor(live, user.id);
-      status = `<div class="card status">
-<h1>${live.status === 'dialing' ? `Waiting for ${esc(other.name)} to reply` : `You're in a text chat with ${esc(other.name)}`}</h1>
+      status = `<div class="card sky with-pic">${pic('text')}<div>
+<h2>${live.status === 'dialing' ? `We're waiting for ${esc(other.name)} to reply` : `You're in a text chat with ${esc(other.name)}`}</h2>
 <p>Reply to our text messages on your phone, and we'll pass them on. Your numbers stay private.</p>
-<form method="post" action="/me/end-text-chat">${field(csrf)}<button class="secondary">End the text chat</button></form>
-<a href="/me/report?call=${live.id}">Something's not right in this chat</a>
-</div>`;
+<p>When you've finished, send a text that just says <strong>END</strong>, or press the button below.</p>
+</div></div>
+${form('/me/end-text-chat', '<button class="secondary">End the text chat</button>')}
+<p><a href="/me/report?call=${live.id}">Something's not right in this chat</a></p>`;
     } else if (live) {
-      status = `<div class="card status"><h1>We're ringing you now</h1><p>Please answer your phone.</p></div>`;
+      status = `<div class="card sage with-pic">${pic('ring')}<div><h2>We're ringing you now</h2><p>Please answer your phone.</p></div></div>`;
     } else if (available) {
       const byText = user.available_medium === 'sms';
-      status = `<div class="card status">
-<h1>You're on the list for a ${byText ? 'text message chat' : 'chat'}</h1>
-<p>${byText ? "We'll send you a text message as soon as someone is free." : "We'll ring you as soon as someone is free. Keep your phone nearby."}</p>
-<p class="muted">We'll stop trying at ${esc(new Date(user.available_until).toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit' }))}.</p>
-<form method="post" action="/me/available">${field(csrf)}<input type="hidden" name="on" value="0"><button class="secondary">I don't want a call now</button></form>
-</div>`;
+      status = `<div class="card peach with-pic">${pic('tea')}<div>
+<h2>We're finding someone for you</h2>
+<p>${byText ? "You're on the list for a text message chat. We'll send you a text as soon as someone is free." : "You're on the list for a chat. We'll ring you as soon as someone is free, so please keep your phone nearby."}</p>
+<p>Why not put the kettle on? We'll keep looking until ${esc(timeOfDay(user.available_until))}.</p>
+</div></div>
+${form('/me/available', `<button class="secondary">I don't want a chat now</button>`, '<input type="hidden" name="on" value="0">')}`;
     } else {
-      status = `<div class="card status">
-<h1>Hello ${esc(user.name)}</h1>
-<p>Would you like a chat with someone new?</p>
-<form method="post" action="/me/available">${field(csrf)}<input type="hidden" name="on" value="1">
-<button name="medium" value="voice">Yes, ring me for a chat</button>
-<button name="medium" value="sms" class="secondary">Yes, a chat by text message</button></form>
-<p class="muted">With a text chat, you send text messages to our number and we pass them on.</p>
+      status = `<div class="card sage">
+<h2>Would you like a chat?</h2>
+<p>Choose how you'd like to chat:</p>
+${form('/me/available', `
+<button class="choice" name="medium" value="voice">${pic('ring')}<span>Ring me for a chat<small>We'll ring you when someone is free.</small></span></button>
+<button class="choice secondary" name="medium" value="sms">${pic('text')}<span>Chat by text message<small>We'll send you a text when someone is free.</small></span></button>`,
+  '<input type="hidden" name="on" value="1">')}
 </div>`;
     }
 
     const feedback = pending.map((c) => `
 <div class="card">
-<p><strong>You talked to ${esc(c.other_name)}</strong> <span class="muted">on ${esc(when(c.started_at))}</span></p>
-<p>Would you like to talk to ${esc(c.other_name)} again?</p>
-<form method="post" action="/me/feedback">${field(csrf)}<input type="hidden" name="call" value="${c.id}">
-<div class="row"><button name="answer" value="yes">Yes please</button><button name="answer" value="no" class="secondary">No thank you</button></div>
-</form>
-<a href="/me/report?call=${c.id}">Something wasn't right in this chat</a>
+<p><strong>You chatted with ${esc(c.other_name)}</strong><br><span class="muted">${esc(when(c.started_at))}</span></p>
+<p>Would you like to chat with ${esc(c.other_name)} again?</p>
+${form('/me/feedback', `<div class="row"><button name="answer" value="yes">Yes please</button><button name="answer" value="no" class="secondary">No thank you</button></div>`,
+    `<input type="hidden" name="call" value="${c.id}">`)}
+<p class="muted">We'll only put you back in touch if ${esc(c.other_name)} says yes too.</p>
+<p><a href="/me/report?call=${c.id}">Something wasn't right in this chat</a></p>
 </div>`).join('');
 
     const friendList = friends.length
       ? friends.map((f) => `
 <div class="card">
-<p><strong>${esc(f.name)}</strong>${f.last_spoke ? ` <span class="muted">· last chat ${esc(when(f.last_spoke))}</span>` : ''}</p>
-<form method="post" action="/me/call-friend">${field(csrf)}<input type="hidden" name="friend" value="${f.id}">
-<div class="row"><button name="medium" value="voice">Ring ${esc(f.name)}</button>
-<button name="medium" value="sms" class="secondary">Text ${esc(f.name)}</button></div></form>
-<details><summary>More</summary>
-<form method="post" action="/me/block" onsubmit="return confirm('Block ${esc(f.name)}? You will never be put through to them again.')">${field(csrf)}
-<input type="hidden" name="user" value="${f.id}"><button class="danger small">Block ${esc(f.name)}</button></form>
+<h3>${esc(f.name)}</h3>
+${f.last_spoke ? `<p class="muted">Your last chat: ${esc(when(f.last_spoke))}</p>` : ''}
+${form('/me/call-friend', `<div class="row"><button name="medium" value="voice">Ring ${esc(f.name)}</button>
+<button name="medium" value="sms" class="secondary">Text ${esc(f.name)}</button></div>`, `<input type="hidden" name="friend" value="${f.id}">`)}
+<details><summary>Don't want to hear from ${esc(f.name)} any more?</summary>
+<p>If you press this, you will never be put in touch with ${esc(f.name)} again. They won't be told.</p>
+${form('/me/block', `<button class="danger small">Stop all contact with ${esc(f.name)}</button>`, `<input type="hidden" name="user" value="${f.id}">`)}
 </details>
 </div>`).join('')
-      : '<p class="muted">After a chat, if you both say you\'d like to talk again, they will appear here and you can ring them.</p>';
+      : `<p class="muted">When you and someone you've chatted with both say you'd like to chat again, they'll appear here.</p>`;
 
     render(req, res, {
-      title: 'Your page', user, refresh: available || live ? 30 : undefined,
-      body: `${status}
+      title: 'Your page', user, path: '/me', refresh: available || live ? 30 : undefined,
+      body: `<h1>Hello ${esc(user.name)}</h1>
+${status}
 ${feedback ? `<h2>Your recent chats</h2>${feedback}` : ''}
-<h2>Friends</h2>
-<p class="muted">Ring or text them through us, so your numbers stay private.</p>
+<h2>Your friends</h2>
+<p>People you've both said you'd like to chat with again. We still keep your numbers private.</p>
 ${friendList}
-<h2>Ringing us instead</h2>
-<p>You can do all of this by phone too. Ring <span class="phone">${esc(config.publicPhoneNumber)}</span> and use your PIN.</p>
-${lastCallReport(user, csrf)}`,
+<h2>Rather use the telephone?</h2>
+<p>You can do all of this by ringing us on <span class="phone">${esc(phone)}</span> and typing in your PIN.</p>
+${lastCallReport(user)}`,
     });
   });
 
@@ -279,7 +408,7 @@ ${lastCallReport(user, csrf)}`,
     const last = service.lastCall(user.id);
     if (!last || service.pendingFeedback(user.id).some((c) => c.id === last.id)) return '';
     const other = service.otherPartyFor(last, user.id);
-    return `<p><a href="/me/report?call=${last.id}">Report a problem with ${esc(other.name)} (your last chat)</a></p>`;
+    return `<p><a href="/me/report?call=${last.id}">Tell us about a problem with ${esc(other.name)}, your last chat</a></p>`;
   }
 
   router.post('/me/available', requireUser, handle(async (req, res) => {
@@ -292,8 +421,8 @@ ${lastCallReport(user, csrf)}`,
   router.post('/me/feedback', requireUser, handle(async (req, res) => {
     const result = await service.submitFeedback(Number(req.body.call), req.user.id, req.body.answer === 'yes');
     if (req.body.answer !== 'yes') flash(req, 'Thank you for letting us know.');
-    else if (result.connected) flash(req, `Wonderful! ${result.other.name} would like to talk again too. You can ring them below.`);
-    else flash(req, "Lovely. If they'd like to talk again too, we'll send you a text and they'll appear below.");
+    else if (result.connected) flash(req, `Wonderful! ${result.other.name} would like to chat again too. You'll find them under "Your friends".`);
+    else flash(req, "Lovely. If they'd like to chat again too, we'll send you a text message and they'll appear under \"Your friends\".");
     res.redirect('/me');
   }, '/me'));
 
@@ -302,14 +431,17 @@ ${lastCallReport(user, csrf)}`,
     const other = call && service.otherPartyFor(call, req.user.id);
     if (!other) return res.redirect('/me');
     render(req, res, {
-      title: 'Report a problem', user: req.user,
+      title: 'Tell us what happened', user: req.user, path: '/me',
       body: `
-<h1>Report a problem with ${esc(other.name)}</h1>
-<p>We're sorry something went wrong. When you send this, <strong>${esc(other.name)} is blocked</strong> and you will never be put through to them again. Our team will look into what happened.</p>
+<h1>Tell us what happened</h1>
+<p>We're sorry something wasn't right with ${esc(other.name)}. Thank you for telling us.</p>
+<div class="card sage with-pic">${pic('shield')}<div>
+<p>When you press the button, <strong>you will never be put in touch with ${esc(other.name)} again</strong>, and our team will look into it.</p>
+</div></div>
 <form method="post" action="/me/report">${field(req.session.csrf)}<input type="hidden" name="call" value="${call.id}">
-<label for="reason">What happened? <span class="hint">(optional)</span></label>
+<label for="reason">What happened? <span class="hint">You don't have to write anything, but it helps us.</span></label>
 <textarea id="reason" name="reason" rows="5"></textarea>
-<button class="danger">Report and block ${esc(other.name)}</button>
+<button class="danger">Send, and stop all contact with ${esc(other.name)}</button>
 </form>
 <a class="button secondary" href="/me">Go back</a>`,
     });
@@ -317,17 +449,17 @@ ${lastCallReport(user, csrf)}`,
 
   router.post('/me/report', requireUser, handle(async (req, res) => {
     const { reported } = await service.report(req.user.id, Number(req.body.call), req.body.reason);
-    flash(req, `Thank you for telling us. ${reported.name} has been blocked and our team will look into it.`);
+    flash(req, `Thank you for telling us. You won't be put in touch with ${reported.name} again, and our team will look into it.`);
     res.redirect('/me');
   }, '/me'));
 
   router.post('/me/block', requireUser, handle(async (req, res) => {
     const other = service.getUser(Number(req.body.user));
-    // Only people you've actually spoken to can be blocked from here.
+    // Only people you've actually chatted with can be blocked from here.
     if (!other || !service.q(`SELECT 1 FROM calls WHERE (user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?)`)
       .get(req.user.id, other.id, other.id, req.user.id)) throw new UserError('Sorry, something went wrong.');
     service.block(req.user.id, other.id);
-    flash(req, `${other.name} has been blocked.`);
+    flash(req, `Done. You won't be put in touch with ${other.name} again.`);
     res.redirect('/me');
   }, '/me'));
 
@@ -336,8 +468,8 @@ ${lastCallReport(user, csrf)}`,
     const call = await service.callFriend(req.user.id, Number(req.body.friend), { medium });
     const name = service.getUser(call.user_b).name;
     flash(req, medium === 'sms'
-      ? `We've sent ${name} a text to ask if they'd like to chat. We'll text you when they reply.`
-      : `We're ringing you now, then we'll ring ${name}.`);
+      ? `We've sent ${name} a text message to ask if they'd like to chat. We'll let you know when they reply.`
+      : `We're ringing you now. Then we'll ring ${name}.`);
     res.redirect('/me');
   }, '/me'));
 
