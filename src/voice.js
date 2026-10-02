@@ -101,13 +101,17 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     if (!user) return goodbye(res, 'Sorry, please ring again. Goodbye.');
     if (!service.canUse(user)) return goodbye(res, `${service.blockedReason(user)} Goodbye.`);
     const prompt = [];
-    if (service.isAvailable(user)) {
+    const waitingRoom = service.isAvailable(user) && user.available_room && service.groups.getRoom(user.available_room);
+    if (waitingRoom) {
+      prompt.push(`You're on the list for the ${waitingRoom.name} group chat, and we'll ${user.available_medium === 'sms' ? 'text' : 'ring'} you when enough people are free.`);
+    } else if (service.isAvailable(user)) {
       prompt.push(user.available_medium === 'sms'
         ? "You're on the list for a text message chat, and we'll text you when someone is free."
         : "You're on the list for a chat, and we'll ring you when someone is free.");
     }
     prompt.push('To have a chat on the phone with someone new, press 1.');
     prompt.push('To chat by text message instead, press 5.');
+    prompt.push('To join a group chat about a hobby, like gardening or music, press 6.');
     if (service.listFriends(user.id).length) prompt.push('To ring one of your friends, press 2.');
     if (service.isAvailable(user)) prompt.push("If you don't want any calls for now, press 3.");
     const pending = service.pendingFeedback(user.id)[0];
@@ -127,6 +131,9 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
         return goodbye(res, `Lovely. We'll ring you back as soon as someone else is free for a chat. It might take a little while, so keep your phone nearby. We'll stop trying in ${Math.round(config.availableForMinutes / 60)} hours. Goodbye for now.`);
       case '2':
         vr.redirect({ method: 'POST' }, '/voice/friends');
+        return xml(res, vr);
+      case '6':
+        vr.redirect({ method: 'POST' }, '/voice/groups');
         return xml(res, vr);
       case '5':
         service.setAvailable(user.id, true, 'sms');
@@ -180,6 +187,36 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     const call = await service.callFriend(user.id, friendId, { aSid: req.body.CallSid });
     vr.redirect({ method: 'POST' }, url('/voice/leg', { call: call.id, leg: 'a', onLine: 1 }));
     xml(res, vr);
+  }));
+
+  // ---------- choosing a group chat ----------
+
+  router.post('/groups', wrap(async (req, res) => {
+    const user = menuUser(req);
+    if (!user) return goodbye(res, 'Sorry, please ring again. Goodbye.');
+    const rooms = service.groups.menuRooms().slice(0, 8);
+    service.ivrSet(req.body.CallSid, { data: { rooms: rooms.map((r) => r.id) } });
+    ask(res, {
+      prompt: ['Group chats are friendly phone chats with a few people who share a hobby. Which group would you like to join?',
+        ...rooms.map((r, i) => `For ${r.name}, press ${i + 1}.`), 'To go back, press 0.'],
+      action: '/voice/group-choice', retryUrl: '/voice/groups', retry: retryOf(req),
+    });
+  }));
+
+  router.post('/group-choice', wrap(async (req, res) => {
+    const user = menuUser(req);
+    const roomId = service.ivrData(req.body.CallSid).rooms?.[Number(req.body.Digits) - 1];
+    if (!user || !roomId) {
+      const vr = new VoiceResponse();
+      vr.redirect({ method: 'POST' }, '/voice/menu');
+      return xml(res, vr);
+    }
+    const room = service.groups.getRoom(roomId);
+    // Only put them on the list: we ring back once enough people are free,
+    // so this call can end straight away.
+    service.setAvailable(user.id, true, 'voice', room.id);
+    setImmediate(onAvailable);
+    goodbye(res, `Lovely. You're on the list for the ${room.name} group chat. We'll ring you back as soon as enough people are free to join in. Keep your phone nearby. Goodbye for now.`);
   }));
 
   // ---------- joining by phone ----------
@@ -319,6 +356,129 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     }, `lonely-oldies-call-${callId}`);
     xml(res, vr);
   }
+
+  // ---------- group chats on the phone ----------
+
+  function loadGroup(req) {
+    const groups = service.groups;
+    const chat = groups.getChat(Number(req.query.chat));
+    const userId = Number(req.query.user);
+    const me = chat && groups.participant(chat.id, userId);
+    if (!me) throw new UserError('Sorry, this group chat has finished.');
+    return { chat, me, user: service.getUser(userId), room: groups.roomName(chat), groups };
+  }
+
+  // What someone hears when we ring them for a group chat.
+  router.post('/group-leg', wrap(async (req, res) => {
+    const { chat, me, user, room, groups } = loadGroup(req);
+    if (!['dialing', 'in_progress'].includes(chat.status) || me.state !== 'dialing') {
+      return goodbye(res, 'Sorry, this group chat has finished. Goodbye.');
+    }
+    if (retryOf(req) >= 2) {
+      await groups.leftCall(chat.id, user.id, { declined: true });
+      return goodbye(res, "We'll try again another time. Goodbye.");
+    }
+    const others = groups.people(chat.id).filter((p) => p.user_id !== user.id);
+    ask(res, {
+      prompt: [`Hello ${user.name}, this is Lonely Oldies.`,
+        chat.status === 'in_progress'
+          ? `The ${room} group chat is going on now, with ${groups.names(others)}.`
+          : `The ${room} group chat is starting, with ${groups.names(others)}.`,
+        'To join in, press 1.', "If now isn't a good time, press 2."],
+      action: url('/voice/group-answer', { chat: chat.id, user: user.id }),
+      retryUrl: url('/voice/group-leg', { chat: chat.id, user: user.id }), retry: retryOf(req),
+    });
+  }));
+
+  router.post('/group-answer', wrap(async (req, res) => {
+    const { chat, me, user, room, groups } = loadGroup(req);
+    if (req.body.Digits !== '1') {
+      await groups.leftCall(chat.id, user.id, { declined: true });
+      return goodbye(res, "That's fine. We hope you can join in another time. Goodbye.");
+    }
+    if (!['dialing', 'in_progress'].includes(chat.status) || me.state !== 'dialing') {
+      return goodbye(res, 'Sorry, this group chat has finished. Goodbye.');
+    }
+    const here = groups.joined(chat.id, user.id);
+    const vr = new VoiceResponse();
+    const say = sayer(vr);
+    say(here > 1 ? `Welcome to the ${room} group chat. Putting you through now.`
+      : `Thank you. Please hold on while the others join the ${room} group chat.`);
+    say('Remember, never share your address, your bank details or any passwords. Please be kind, and let everyone have a turn to speak. To leave the chat at any time, press the star key.');
+    const dial = vr.dial({
+      action: url('/voice/group-after', { chat: chat.id, user: user.id }),
+      method: 'POST',
+      hangupOnStar: true,
+      timeLimit: config.maxCallMinutes * 60,
+    });
+    dial.conference({
+      beep: 'false',
+      // The first to arrive waits with hold music until someone else joins.
+      startConferenceOnEnter: here > 1,
+      // One person leaving doesn't end the chat for everyone else.
+      endConferenceOnExit: false,
+    }, `lonely-oldies-group-${chat.id}`);
+    xml(res, vr);
+  }));
+
+  // When someone leaves a group chat (star key or time limit), or is the last one left.
+  router.post('/group-after', wrap(async (req, res) => {
+    const { chat, user, room, groups } = loadGroup(req);
+    await groups.leftCall(chat.id, user.id);
+    const fresh = groups.getChat(chat.id);
+    if (!fresh.started_at) {
+      if (!req.query.alone) return goodbye(res, 'Goodbye, and take care.');
+      return goodbye(res, `I'm sorry, not enough people could join the ${room} group chat this time. We'll keep you on the list and ring you again when more people are free. Goodbye for now.`);
+    }
+    ask(res, {
+      prompt: [req.query.alone ? `Everyone else has left, so the ${room} group chat has finished.` : '',
+        `Thank you for joining in with the ${room} group.`,
+        'If someone in the group was unkind or upset you, press 9. Otherwise, you can hang up now.'].filter(Boolean),
+      action: url('/voice/group-report', { chat: chat.id, user: user.id }),
+      retryUrl: url('/voice/group-after', { chat: chat.id, user: user.id }), retry: Math.max(retryOf(req), 1),
+      giveUp: 'Goodbye, and take care.',
+    });
+  }));
+
+  router.post('/group-alone', wrap(async (req, res) => {
+    const vr = new VoiceResponse();
+    vr.redirect({ method: 'POST' }, url('/voice/group-after', { chat: req.query.chat, user: req.query.user, alone: 1 }));
+    xml(res, vr);
+  }));
+
+  // Reporting someone after a group chat: we list the people who were in it.
+  router.post('/group-report', wrap(async (req, res) => {
+    const { chat, user, groups } = loadGroup(req);
+    const others = groups.everyone(chat.id).filter((p) => p.user_id !== user.id && p.joined_at).slice(0, 8);
+    if (req.body.Digits !== '9' || !others.length) return goodbye(res, 'Goodbye, and take care.');
+    ask(res, {
+      prompt: [...others.map((p, i) => `To report ${p.name}, press ${i + 1}.`), 'To go back, press 0.'],
+      action: url('/voice/group-report-who', { chat: chat.id, user: user.id }),
+      retryUrl: url('/voice/group-after', { chat: chat.id, user: user.id }), retry: 1,
+      giveUp: 'Goodbye, and take care.',
+    });
+  }));
+
+  router.post('/group-report-who', wrap(async (req, res) => {
+    const { chat, user, groups } = loadGroup(req);
+    const others = groups.everyone(chat.id).filter((p) => p.user_id !== user.id && p.joined_at).slice(0, 8);
+    const person = others[Number(req.body.Digits) - 1];
+    if (!person) return goodbye(res, 'Goodbye, and take care.');
+    const { reportId } = await groups.report(user.id, chat.id, person.user_id, 'Reported by phone after a group chat.');
+    const vr = new VoiceResponse();
+    const say = sayer(vr);
+    say(`I'm sorry that happened. We've blocked ${person.name}, so you will never be put through to them again, and our team will look into it.`);
+    say('If you would like to tell us what happened, please speak after the beep, and press the hash key when you have finished. Or you can just hang up.');
+    vr.record({ action: url('/voice/report-done', { report: reportId }), method: 'POST', maxLength: 120, finishOnKey: '#', playBeep: true });
+    xml(res, vr);
+  }));
+
+  router.post('/group-leg-status', wrap(async (req, res) => {
+    if (ENDED.has(req.body.CallStatus)) {
+      await service.groups.leftCall(Number(req.query.chat), Number(req.query.user));
+    }
+    res.status(204).end();
+  }));
 
   router.post('/partner-unavailable', wrap(async (req, res) => {
     const { call, them } = loadLeg(req);

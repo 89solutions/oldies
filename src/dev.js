@@ -44,6 +44,16 @@ export function devRouter({ service, telephony, onAvailable }) {
       }
       return '';
     };
+    const groupChats = service.q('SELECT * FROM group_chats ORDER BY id DESC LIMIT 6').all();
+    const gbtn = (chat, user, act, label) => `<form method="post" action="/dev/simulator/group-act" style="display:inline">${field(csrf)}
+      <input type="hidden" name="chat" value="${chat}"><input type="hidden" name="user" value="${user}">
+      <button class="small" name="act" value="${act}">${label}</button></form>`;
+    const groupButtons = (g, p) => {
+      if (!['dialing', 'in_progress'].includes(g.status)) return '';
+      if (p.state === 'dialing') return gbtn(g.id, p.user_id, 'ring', 'Hear greeting') + gbtn(g.id, p.user_id, 'answer', 'Press 1 (join)') + gbtn(g.id, p.user_id, 'decline', 'Press 2 (not now)');
+      if (p.state === 'joined') return gbtn(g.id, p.user_id, 'leave', 'Hang up');
+      return '';
+    };
     const last = req.session.lastTwiml;
     delete req.session.lastTwiml;
     res.send(page({
@@ -54,7 +64,9 @@ export function devRouter({ service, telephony, onAvailable }) {
 ${noticeBox(req.session.flash)}${(delete req.session.flash, '')}
 <form method="post" action="/dev/simulator/demo">${field(csrf)}
 <button name="medium" value="voice">Add two demo people who are free for a phone chat</button>
-<button name="medium" value="sms" class="secondary">Add two demo people who are free for a text chat</button></form>
+<button name="medium" value="sms" class="secondary">Add two demo people who are free for a text chat</button>
+<button name="group" value="voice" class="secondary">Add three demo people for the first group chat, by phone</button>
+<button name="group" value="sms" class="secondary">Add three demo people for the first group chat, by text</button></form>
 <h2>Send a text to the service</h2>
 <form method="post" action="/dev/simulator/sms">${field(csrf)}
 <label for="from">From</label>
@@ -73,6 +85,11 @@ ${calls.map((c) => `<tr><td>${c.id}</td><td>${c.medium === 'sms' ? 'text' : 'pho
 <td>${esc(c.b_name)} (${c.b_state})<br>${legButtons(c, 'b')}</td></tr>
 ${c.status === 'in_progress' ? `<tr><td></td><td colspan="3">Chat in progress ${btn(c.id, 'a', 'hangup', 'Both hang up')}</td></tr>` : ''}`).join('')}</table>`
     : '<p>No calls yet.</p>'}
+<h2>Group chats</h2>
+${groupChats.length ? `<table><tr><th>#</th><th>Group / status</th><th>People</th></tr>
+${groupChats.map((g) => `<tr><td>${g.id}</td><td>${esc(service.groups.roomName(g))} · ${g.medium === 'sms' ? 'text' : 'phone'}<br><strong>${g.status}</strong></td>
+<td>${service.groups.everyone(g.id).map((p) => `<p>${esc(p.name)} (${p.state}) ${g.medium === 'voice' ? groupButtons(g, p) : ''}</p>`).join('')}</td></tr>`).join('')}</table>`
+    : '<p>No group chats yet.</p>'}
 ${last ? `<h2>What the phone service was told to do</h2><pre>${esc(last)}</pre>` : ''}
 <h2>Text messages that would have been sent</h2>
 ${telephony.sms.slice(-12).reverse().map((m) => `<p><strong>${esc(m.to)}</strong>: ${esc(m.body)}</p>`).join('') || '<p>None yet.</p>'}
@@ -84,15 +101,18 @@ ${telephony.sms.slice(-12).reverse().map((m) => `<p><strong>${esc(m.to)}</strong
 
   router.post('/simulator/demo', (req, res) => {
     const names = ['Margaret', 'Arthur', 'Joan', 'Stanley', 'Dorothy', 'Harold', 'Edna', 'Wilfred'];
-    for (let added = 0; added < 2;) {
+    const room = req.body.group ? service.groups.menuRooms()[0] : null;
+    for (let added = 0; added < (room ? 3 : 2);) {
       const phone = `+447700900${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
       if (service.getUserByPhone(phone)) continue;
       added++;
       const id = Number(service.q(`INSERT INTO users (phone, name, pin_hash, verified, created_at) VALUES (?, ?, ?, 1, ?)`)
         .run(phone, names[Math.floor(Math.random() * names.length)], hashSecret('2468'), service.now()).lastInsertRowid);
-      service.setAvailable(id, true, req.body.medium);
+      if (room) service.setAvailable(id, true, req.body.group, room.id);
+      else service.setAvailable(id, true, req.body.medium);
     }
-    req.session.flash = 'Added two demo people (PIN 2468). Now press "Run matching now".';
+    req.session.flash = room ? `Added three demo people for the ${room.name} group (PIN 2468). Now press "Run matching now".`
+      : 'Added two demo people (PIN 2468). Now press "Run matching now".';
     res.redirect('/dev/simulator');
   });
 
@@ -102,8 +122,11 @@ ${telephony.sms.slice(-12).reverse().map((m) => `<p><strong>${esc(m.to)}</strong
   });
 
   router.post('/simulator/match', async (req, res) => {
+    const groupsBefore = service.q('SELECT COUNT(*) AS n FROM group_participants').get().n;
     const started = await service.runMatchmaker();
-    req.session.flash = started.length ? `Started ${started.length} call(s).` : 'Nobody to match right now.';
+    const groupJoins = service.q('SELECT COUNT(*) AS n FROM group_participants').get().n - groupsBefore;
+    req.session.flash = started.length || groupJoins
+      ? `Started ${started.length} call(s)${groupJoins ? ` and put ${groupJoins} people into group chats` : ''}.` : 'Nobody to match right now.';
     res.redirect('/dev/simulator');
   });
 
@@ -123,6 +146,25 @@ ${telephony.sms.slice(-12).reverse().map((m) => `<p><strong>${esc(m.to)}</strong
       for (const l of ['a', 'b']) out.push(await hook(req, '/voice/leg-status', { call: id, leg: l }, { CallSid: call[`${l}_sid`], CallStatus: 'completed' }));
     }
     if (act?.startsWith('fb')) out.push(await hook(req, '/voice/feedback', q, { CallSid: sid, Digits: act.slice(2) }));
+    req.session.lastTwiml = out.join('\n\n');
+    onAvailable();
+    res.redirect('/dev/simulator');
+  });
+
+  router.post('/simulator/group-act', async (req, res) => {
+    const { chat, user, act } = req.body;
+    const p = service.groups.participant(Number(chat), Number(user));
+    if (!p) return res.redirect('/dev/simulator');
+    const q = { chat, user };
+    const sid = p.sid || 'CAsimulated';
+    const out = [];
+    if (act === 'ring') out.push(await hook(req, '/voice/group-leg', q, { CallSid: sid }));
+    if (act === 'answer') out.push(await hook(req, '/voice/group-answer', q, { CallSid: sid, Digits: '1' }));
+    if (act === 'decline') out.push(await hook(req, '/voice/group-answer', q, { CallSid: sid, Digits: '2' }));
+    if (act === 'leave') {
+      out.push(await hook(req, '/voice/group-after', q, { CallSid: sid }));
+      out.push(await hook(req, '/voice/group-leg-status', q, { CallSid: sid, CallStatus: 'completed' }));
+    }
     req.session.lastTwiml = out.join('\n\n');
     onAvailable();
     res.redirect('/dev/simulator');
