@@ -64,7 +64,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const config = loadConfig();
   const { app, runMatchmaker, telephony } = createApp({ config });
   app.listen(config.port, () => {
-    console.log(`Lonely Oldies running on ${config.baseUrl} (port ${config.port})`);
+    console.log(`Tea and Company running on ${config.baseUrl} (port ${config.port})`);
     if (telephony.mode === 'mock') {
       console.log(`Test mode: no real calls or texts. Simulator: http://localhost:${config.port}/dev/simulator`);
     }

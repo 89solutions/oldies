@@ -72,14 +72,14 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
       body: `
 <div class="hero">
 <h1>A friendly chat, whenever you'd like one</h1>
-<p class="lead">Lonely Oldies puts you in touch with someone new for a friendly chat, on the phone or by text message.</p>
+<p class="lead">Tea and Company puts you in touch with someone new for a friendly chat, on the phone or by text message.</p>
 <img src="/images/hero.svg" alt="Two older people smiling as they chat on the phone from their armchairs">
 </div>
 <div class="card sage with-pic">${pic('shield')}<div>
 <p><strong>Your phone number stays private.</strong></p>
 <p>We ring you both from our own number, so nobody ever sees yours.</p>
 </div></div>
-<a class="button" href="/join">Join Lonely Oldies</a>
+<a class="button" href="/join">Join Tea and Company</a>
 <a class="button secondary" href="/signin">I've joined before. Sign in</a>
 
 <h2>How it works</h2>
@@ -128,7 +128,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
 
 <div class="card sage with-pic">${pic('shield')}<div>
 <h2>Your number stays private</h2>
-<p>Every call and text message goes through Lonely Oldies. The other person never sees your phone number, and you never see theirs. They only know your first name.</p>
+<p>Every call and text message goes through Tea and Company. The other person never sees your phone number, and you never see theirs. They only know your first name.</p>
 </div></div>
 
 <h2>What you need</h2>
@@ -137,7 +137,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
 <li>A mobile phone if you'd like to chat by text message.</li>
 </ul>
 <p>That's all. A family member or friend is very welcome to help you join.</p>
-<a class="button" href="${currentUser(req) ? '/me' : '/join'}">${currentUser(req) ? 'Go to your page' : 'Join Lonely Oldies'}</a>`,
+<a class="button" href="${currentUser(req) ? '/me' : '/join'}">${currentUser(req) ? 'Go to your page' : 'Join Tea and Company'}</a>`,
   }));
 
   router.get('/safety', (req, res) => render(req, res, {
@@ -145,7 +145,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
     body: `
 <h1>Staying safe</h1>
 <div class="card sage with-pic">${pic('shield')}<div>
-<p class="lead">We've made Lonely Oldies as safe as we can. Here's how we look after you, and how you can look after yourself.</p>
+<p class="lead">We've made Tea and Company as safe as we can. Here's how we look after you, and how you can look after yourself.</p>
 </div></div>
 <h2>How we look after you</h2>
 <ul class="tips">
@@ -153,13 +153,13 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
 <li>Only your first name is shared.</li>
 <li>Every text message is checked before we pass it on. Messages with phone numbers, addresses, anything about money, or unkind words are stopped.</li>
 <li>If you tell us someone upset you, you will never be put in touch with them again, and our team will look into it.</li>
-<li>If more than one person tells us about someone, we stop them using Lonely Oldies straight away.</li>
+<li>If more than one person tells us about someone, we stop them using Tea and Company straight away.</li>
 </ul>
 <h2>How to look after yourself</h2>
 <ul class="tips">
 <li>Never tell anyone your address, your bank details, your PIN or any passwords.</li>
 <li>Never send money to anyone you meet here, whatever reason they give.</li>
-<li><strong>Nobody from Lonely Oldies will ever ask you for money or your PIN.</strong></li>
+<li><strong>Nobody from Tea and Company will ever ask you for money or your PIN.</strong></li>
 </ul>
 <h2>If a chat doesn't feel right</h2>
 <ul class="tips">
@@ -174,7 +174,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
     const qa = [
       ['Will anyone see my phone number?', 'No. We ring you both from our own number, and text messages go through us too. The other person never sees your number.'],
       ['What will the other person know about me?', 'Only your first name. Everything else is up to you, and we suggest you keep your address and money matters to yourself.'],
-      ['Who will I be chatting to?', 'Another member of Lonely Oldies who is free for a chat at the same time as you. We choose at random, so it may be someone new each time.'],
+      ['Who will I be chatting to?', 'Another member of Tea and Company who is free for a chat at the same time as you. We choose at random, so it may be someone new each time.'],
       ['What if I miss the call?', "That's fine. Nobody minds. Just tell us you're free again when it suits you."],
       ["What if I don't want to chat when you ring?", "Press 2 when we ring and we'll say goodbye politely. The other person isn't told why."],
       ['How do I end a chat?', 'On the phone, just put the phone down, or press the star key (*). In a text chat, send a text that just says END.'],
@@ -205,7 +205,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
   router.get('/join', (req, res) => render(req, res, {
     title: 'Join',
     body: `
-<h1>Join Lonely Oldies</h1>
+<h1>Join Tea and Company</h1>
 <p class="muted">Step 1 of 2</p>
 <p>It only takes a few minutes. A family member or friend is welcome to help.</p>
 <form method="post" action="/join">${field(req.session.csrf)}
@@ -258,7 +258,7 @@ ${practiceNote('The message')}
 
   router.post('/verify', handle(async (req, res) => {
     service.verifyPhone(req.session.userId, req.body.code);
-    flash(req, "That's it, you've joined. Welcome to Lonely Oldies!");
+    flash(req, "That's it, you've joined. Welcome to Tea and Company!");
     res.redirect('/me');
   }, '/verify'));
 
@@ -281,7 +281,7 @@ ${practiceNote('The message')}
 <button>Sign in</button>
 </form>
 <a class="button secondary" href="/forgot">I've forgotten my PIN</a>
-<p>Not joined yet? <a href="/join">Join Lonely Oldies</a></p>`,
+<p>Not joined yet? <a href="/join">Join Tea and Company</a></p>`,
   }));
 
   router.post('/signin', handle(async (req, res) => {
@@ -559,7 +559,7 @@ ${member ? `<form method="post" action="/groups/join">${field(csrf)}<input type=
 <div class="card sage with-pic">${pic('shield')}<div>
 <p>Just like a chat with one person, <strong>nobody sees your phone number</strong>, and every text message is checked before it is passed on. If someone is unkind, tell us and you'll never be put together again.</p>
 </div></div>
-${member ? '' : `<p class="message good">To join in, please <a href="/signin">sign in</a> or <a href="/join">join Lonely Oldies</a> first. You can also ring us on <span class="phone" style="font-size:1.1rem">${esc(phone)}</span> and press 6.</p>`}
+${member ? '' : `<p class="message good">To join in, please <a href="/signin">sign in</a> or <a href="/join">join Tea and Company</a> first. You can also ring us on <span class="phone" style="font-size:1.1rem">${esc(phone)}</span> and press 6.</p>`}
 ${rooms.map(roomCard).join('')}
 ${member ? `<h2 id="new">Start a new group</h2>
 <p>Can't see your hobby? Start a group for it, and other members can join in.</p>
@@ -643,7 +643,7 @@ ${others.map((p, i) => `<label class="tick"><input type="radio" name="person" va
     const want = Buffer.from(config.adminPassword);
     const got = Buffer.from(password);
     if (config.adminPassword && got.length === want.length && timingSafeEqual(got, want)) return next();
-    res.set('WWW-Authenticate', 'Basic realm="Lonely Oldies team"').status(401).send('Team sign-in needed.');
+    res.set('WWW-Authenticate', 'Basic realm="Tea and Company team"').status(401).send('Team sign-in needed.');
   };
 
   router.get('/admin', adminAuth, (req, res) => {
@@ -682,7 +682,7 @@ ${groupStopped.map((m) => `<tr><td>${esc(when(m.created_at))}</td><td>${esc(m.se
 <h2>Groups</h2>
 <table><tr><th>Group</th><th>Started by</th><th>Chats held</th><th></th></tr>
 ${rooms.map((room) => `<tr><td><strong>${esc(room.name)}</strong><br>${esc(room.description)}</td>
-<td>${room.created_by ? `#${room.created_by}` : 'Lonely Oldies'}</td><td>${room.chats_held}${room.live.length ? ` (${room.live.length} live)` : ''}</td>
+<td>${room.created_by ? `#${room.created_by}` : 'Tea and Company'}</td><td>${room.chats_held}${room.live.length ? ` (${room.live.length} live)` : ''}</td>
 <td>${room.hidden ? action('/admin/room-show', room.id, 'Show again') : action('/admin/room-hide', room.id, 'Hide', 'danger small')}</td></tr>`).join('')}</table>`,
     });
   });

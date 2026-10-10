@@ -1,5 +1,5 @@
 {
-  "name": "lonely-oldies",
+  "name": "tea-and-company",
   "version": "0.1.0",
   "description": "Safe, number-masked phone chats between older people",
   "main": "src/server.js",

@@ -126,14 +126,14 @@ export function page({ title, body, user, csrf, refresh, path = '', big = false,
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 ${refresh ? `<meta http-equiv="refresh" content="${refresh}">` : ''}
-<title>${esc(title)} · Lonely Oldies</title>
+<title>${esc(title)} · Tea and Company</title>
 <link rel="icon" href="/images/logo.svg">
 <style>${STYLE}</style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to the main part of the page</a>
 <header class="top"><div class="top-inner">
-<a class="logo" href="${user ? '/me' : '/'}"><img src="/images/logo.svg" alt="">Lonely Oldies</a>
+<a class="logo" href="${user ? '/me' : '/'}"><img src="/images/logo.svg" alt="">Tea and Company</a>
 <a class="textsize" href="/text-size?big=${big ? 0 : 1}&amp;back=${encodeURIComponent(path || '/')}">${big ? 'Smaller text' : 'Make the text bigger'}</a>
 </div></header>
 <nav class="menu" aria-label="Main"><ul>${menu}</ul></nav>

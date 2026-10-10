@@ -46,14 +46,14 @@ export class TextChats {
       await this.send(userA, this.welcome(userB));
       await this.send(userB, this.welcome(userA));
     } else {
-      await this.send(userA, `Lonely Oldies: we've asked ${userB.name} if they'd like a text chat. We'll text you when they reply.`);
-      await this.send(userB, `Lonely Oldies: your friend ${userA.name} would like a text chat. Reply YES to start, or NO if now isn't a good time.`);
+      await this.send(userA, `Tea and Company: we've asked ${userB.name} if they'd like a text chat. We'll text you when they reply.`);
+      await this.send(userB, `Tea and Company: your friend ${userA.name} would like a text chat. Reply YES to start, or NO if now isn't a good time.`);
     }
     return s.getCall(callId);
   }
 
   welcome(other) {
-    return `Lonely Oldies: you're now in a text chat with ${other.name}. Just reply to this number and we'll pass your messages on. ${SAFETY} Text END to finish, or REPORT if anything upsets you.`;
+    return `Tea and Company: you're now in a text chat with ${other.name}. Just reply to this number and we'll pass your messages on. ${SAFETY} Text END to finish, or REPORT if anything upsets you.`;
   }
 
   // Ends a text chat and asks both people whether they'd like to chat again.
@@ -72,8 +72,8 @@ export class TextChats {
         continue;
       }
       await this.send(me, fresh.started_at
-        ? `Lonely Oldies: your text chat with ${them.name} has finished. Would you like to chat with ${them.name} again? Reply YES or NO. If anything upset you, reply REPORT.`
-        : `Lonely Oldies: your text chat with ${them.name} has finished.`);
+        ? `Tea and Company: your text chat with ${them.name} has finished. Would you like to chat with ${them.name} again? Reply YES or NO. If anything upset you, reply REPORT.`
+        : `Tea and Company: your text chat with ${them.name} has finished.`);
     }
     return s.getCall(call.id);
   }
@@ -89,12 +89,12 @@ export class TextChats {
   }
 
   helpText() {
-    return `Lonely Oldies: text FREE to be put in touch with someone for a text chat, or GROUPS to chat with a group about a hobby. To chat on the phone instead, ring ${this.config.publicPhoneNumber}.`;
+    return `Tea and Company: text FREE to be put in touch with someone for a text chat, or GROUPS to chat with a group about a hobby. To chat on the phone instead, ring ${this.config.publicPhoneNumber}.`;
   }
 
   groupList() {
     const rooms = this.service.groups.menuRooms();
-    return `Lonely Oldies group chats. Text JOIN and a number to join in: ${rooms.map((r, i) => `${i + 1} ${r.name}`).join(', ')}.`;
+    return `Tea and Company group chats. Text JOIN and a number to join in: ${rooms.map((r, i) => `${i + 1} ${r.name}`).join(', ')}.`;
   }
 
   // Every text sent to the service number arrives here.
@@ -103,7 +103,7 @@ export class TextChats {
     const user = s.getUserByPhone(from);
     if (!user || !user.verified) {
       if (!s.q('SELECT 1 FROM banned_phones WHERE phone = ?').get(from)) {
-        await s.telephony.sendSms(from, `Lonely Oldies: this number isn't registered. To join, ring ${this.config.publicPhoneNumber} or visit ${this.config.baseUrl}.`);
+        await s.telephony.sendSms(from, `Tea and Company: this number isn't registered. To join, ring ${this.config.publicPhoneNumber} or visit ${this.config.baseUrl}.`);
       }
       return;
     }
@@ -114,7 +114,7 @@ export class TextChats {
     const group = live ? null : s.groups.activeFor(user.id);
 
     if (live?.medium === 'voice' || group?.medium === 'voice') {
-      return this.send(user, "Lonely Oldies: you're on a phone chat at the moment. Text us again afterwards.");
+      return this.send(user, "Tea and Company: you're on a phone chat at the moment. Text us again afterwards.");
     }
     if (live) return this.inChat(live, user, body, word);
     if (group) return s.groups.incomingText(group, user, body, word);
@@ -127,10 +127,10 @@ export class TextChats {
       try {
         const result = await s.groups.join(user.id, room.id, 'sms');
         if (result.waiting) {
-          await this.send(user, `Lonely Oldies: you're on the list for the ${room.name} group chat. We'll text you as soon as enough people are free. Text BUSY if you change your mind.`);
+          await this.send(user, `Tea and Company: you're on the list for the ${room.name} group chat. We'll text you as soon as enough people are free. Text BUSY if you change your mind.`);
         }
       } catch (err) {
-        if (err instanceof UserError) return this.send(user, `Lonely Oldies: ${err.message}`);
+        if (err instanceof UserError) return this.send(user, `Tea and Company: ${err.message}`);
         throw err;
       }
       return;
@@ -140,30 +140,30 @@ export class TextChats {
       const last = s.lastCall(user.id);
       if (!last) return this.send(user, this.helpText());
       const { reported } = await s.report(user.id, last.id, 'Reported by text message.');
-      return this.send(user, `Lonely Oldies: thank you for telling us. ${reported.name} has been blocked and our team will look into it.`);
+      return this.send(user, `Tea and Company: thank you for telling us. ${reported.name} has been blocked and our team will look into it.`);
     }
     if (word === 'YES' || word === 'NO') {
       const pending = s.pendingFeedback(user.id)[0];
       if (!pending) return this.send(user, this.helpText());
       const result = await s.submitFeedback(pending.id, user.id, word === 'YES');
-      if (word === 'NO') return this.send(user, 'Lonely Oldies: thank you for letting us know.');
-      if (!result.connected) return this.send(user, `Lonely Oldies: lovely. If ${pending.other_name} would like to chat again too, we'll let you know.`);
+      if (word === 'NO') return this.send(user, 'Tea and Company: thank you for letting us know.');
+      if (!result.connected) return this.send(user, `Tea and Company: lovely. If ${pending.other_name} would like to chat again too, we'll let you know.`);
       return; // announceFriendship has texted them both
     }
     if (['FREE', 'CHAT', 'START', 'TEXT'].includes(word)) {
       try {
         s.setAvailable(user.id, true, 'sms');
       } catch (err) {
-        if (err instanceof UserError) return this.send(user, `Lonely Oldies: ${err.message}`);
+        if (err instanceof UserError) return this.send(user, `Tea and Company: ${err.message}`);
         throw err;
       }
-      await this.send(user, `Lonely Oldies: you're on the list for a text chat. We'll text you as soon as someone is free. Text BUSY if you change your mind.`);
+      await this.send(user, `Tea and Company: you're on the list for a text chat. We'll text you as soon as someone is free. Text BUSY if you change your mind.`);
       setImmediate(() => s.onAvailable?.());
       return;
     }
     if (word === 'BUSY') {
       s.setAvailable(user.id, false);
-      return this.send(user, "Lonely Oldies: that's fine, you're off the list for now.");
+      return this.send(user, "Tea and Company: that's fine, you're off the list for now.");
     }
     return this.send(user, this.helpText());
   }
@@ -188,11 +188,11 @@ export class TextChats {
     }
     if (call.status === 'dialing') {
       return this.send(user, isInvitee
-        ? `Lonely Oldies: ${other.name} would like a text chat. Reply YES to start, or NO if now isn't a good time.`
-        : `Lonely Oldies: we're still waiting for ${other.name} to reply. Text END to stop waiting.`);
+        ? `Tea and Company: ${other.name} would like a text chat. Reply YES to start, or NO if now isn't a good time.`
+        : `Tea and Company: we're still waiting for ${other.name} to reply. Text END to stop waiting.`);
     }
     if (word === 'HELP') {
-      return this.send(user, `Lonely Oldies: you're in a text chat with ${other.name}. Just reply to send a message. Text END to finish, or REPORT if anything upsets you.`);
+      return this.send(user, `Tea and Company: you're in a text chat with ${other.name}. Just reply to send a message. Text END to finish, or REPORT if anything upsets you.`);
     }
     return this.relay(call, user, other, body);
   }
@@ -213,13 +213,13 @@ export class TextChats {
     if (stopped >= this.config.screenStrikesBeforeReport) {
       await s.report(recipient.id, call.id, `Automatic report: ${stopped} messages from ${sender.name} were stopped by screening.`, {
         say: {
-          [sender.id]: "Lonely Oldies: that message wasn't passed on. Several of your messages have been stopped, so this chat has ended and our team will review it.",
-          [recipient.id]: `Lonely Oldies: we've ended your text chat with ${sender.name} because some of their messages broke our safety rules. They won't be put in touch with you again.`,
+          [sender.id]: "Tea and Company: that message wasn't passed on. Several of your messages have been stopped, so this chat has ended and our team will review it.",
+          [recipient.id]: `Tea and Company: we've ended your text chat with ${sender.name} because some of their messages broke our safety rules. They won't be put in touch with you again.`,
         },
       });
       return;
     }
-    await this.send(sender, `Lonely Oldies: sorry, that message wasn't passed on because it looked like it had ${check.reason}. ${check.category === 'length' ? 'Please send it in smaller parts.' : `To keep everyone safe we don't pass on phone numbers, addresses, links, or anything about money.`}`);
+    await this.send(sender, `Tea and Company: sorry, that message wasn't passed on because it looked like it had ${check.reason}. ${check.category === 'length' ? 'Please send it in smaller parts.' : `To keep everyone safe we don't pass on phone numbers, addresses, links, or anything about money.`}`);
   }
 
   transcript(callId) {

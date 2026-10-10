@@ -61,20 +61,20 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
   router.post('/incoming', wrap(async (req, res) => {
     const from = req.body.From;
     if (!from || !/^\+\d{8,15}$/.test(from)) {
-      return goodbye(res, "Hello, this is Lonely Oldies. We can't see your phone number. Please ring again without hiding your number. Goodbye.");
+      return goodbye(res, "Hello, this is Tea and Company. We can't see your phone number. Please ring again without hiding your number. Goodbye.");
     }
     if (service.q('SELECT 1 FROM banned_phones WHERE phone = ?').get(from)) {
-      return goodbye(res, 'Sorry, this number cannot use Lonely Oldies. Goodbye.');
+      return goodbye(res, 'Sorry, this number cannot use Tea and Company. Goodbye.');
     }
     const user = service.getUserByPhone(from);
     if (user?.verified) {
       return ask(res, {
-        prompt: `Hello ${user.name}, welcome back to Lonely Oldies. Please type in your four number PIN.`,
+        prompt: `Hello ${user.name}, welcome back to Tea and Company. Please type in your four number PIN.`,
         action: '/voice/pin', numDigits: 4, retryUrl: '/voice/incoming', retry: retryOf(req),
       });
     }
     ask(res, {
-      prompt: ['Hello, and welcome to Lonely Oldies, where you can have a friendly chat on the phone with someone new.',
+      prompt: ['Hello, and welcome to Tea and Company, where you can have a friendly chat on the phone with someone new.',
         'Your phone number is always kept private.', 'To join, press 1.'],
       action: '/voice/register-start', retryUrl: '/voice/incoming', retry: retryOf(req),
     });
@@ -305,11 +305,11 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
       return joinConference(res, call.id, 'a', `We're ringing ${them.name} for you now. Please hold on.`);
     }
     const prompt = call.kind === 'random'
-      ? [`Hello ${me.name}, this is Lonely Oldies.`, `We've found someone for you to have a chat with. Their name is ${them.name}.`,
+      ? [`Hello ${me.name}, this is Tea and Company.`, `We've found someone for you to have a chat with. Their name is ${them.name}.`,
         `To start chatting with ${them.name}, press 1.`, notNow]
       : leg === 'a'
-        ? [`Hello ${me.name}, this is Lonely Oldies, ringing so you can talk to ${them.name}.`, 'To carry on, press 1.', notNow]
-        : [`Hello ${me.name}, this is Lonely Oldies.`, `Your friend ${them.name} would like to have a chat.`,
+        ? [`Hello ${me.name}, this is Tea and Company, ringing so you can talk to ${them.name}.`, 'To carry on, press 1.', notNow]
+        : [`Hello ${me.name}, this is Tea and Company.`, `Your friend ${them.name} would like to have a chat.`,
           `To talk to ${them.name} now, press 1.`, notNow];
     // A missed answer (for example an answering machine) counts as "not now".
     if (Number(req.query.retry || 0) >= 2) {
@@ -353,7 +353,7 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
       // The first to arrive waits with hold music; the conference starts when the second joins.
       startConferenceOnEnter: otherHere,
       endConferenceOnExit: true,
-    }, `lonely-oldies-call-${callId}`);
+    }, `tea-and-company-call-${callId}`);
     xml(res, vr);
   }
 
@@ -380,7 +380,7 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     }
     const others = groups.people(chat.id).filter((p) => p.user_id !== user.id);
     ask(res, {
-      prompt: [`Hello ${user.name}, this is Lonely Oldies.`,
+      prompt: [`Hello ${user.name}, this is Tea and Company.`,
         chat.status === 'in_progress'
           ? `The ${room} group chat is going on now, with ${groups.names(others)}.`
           : `The ${room} group chat is starting, with ${groups.names(others)}.`,
@@ -417,7 +417,7 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
       startConferenceOnEnter: here > 1,
       // One person leaving doesn't end the chat for everyone else.
       endConferenceOnExit: false,
-    }, `lonely-oldies-group-${chat.id}`);
+    }, `tea-and-company-group-${chat.id}`);
     xml(res, vr);
   }));
 
