@@ -16,6 +16,8 @@ A phone-first service that puts older people through to each other for a friendl
 
 The pages are written for people who don't use computers much: large text (with a "Make the text bigger" link), big buttons, everyday words, calm colours and friendly pictures. They work without JavaScript on old phones and tablets. Besides joining, signing in and each member's own page, there are "How it works", "Staying safe" and "Questions" pages. The pictures are simple drawings in `public/images/`, made for this service, so there are no licences to worry about.
 
+There are no `.html` files in `src/`: the app builds each page when someone visits. To see the pages without running anything, open `site/index.html`. The `site/` folder holds a plain copy of the public pages (Home, Group chats, How it works, Staying safe, Questions, Join, Sign in and Forgotten PIN), with a bigger-text copy of each in `site/bigger/`. After changing the website, run `npm run export-site` to write them out again. In that copy the forms don't do anything, as they need the running app, and the Group chats page shows the starter groups with nobody chatting. Members' own pages and the team page aren't included, as they need someone signed in.
+
 ## How the number masking works
 
 ```
@@ -146,6 +148,7 @@ src/screening.js  the rules every text message is checked against
 src/web.js        website pages and team page
 src/telephony.js  Twilio provider and the test-mode stand-in
 src/dev.js        test-mode simulator
+scripts/export-site.js  writes the public pages to site/ (npm run export-site)
 src/db.js         SQLite schema (uses Node's built-in SQLite, nothing to install)
 test/             automated tests (npm test)
 ```

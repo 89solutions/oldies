@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Group chats · Lonely Oldies</title>
+<link rel="icon" href="images/logo.svg">
+<style>
+:root {
+  --bg: #f7f5ef; --surface: #ffffff; --ink: #1f2a2e; --muted: #48585c;
+  --brand: #2f6f6a; --brand-dark: #24524e; --brand-ink: #ffffff;
+  --sage: #e3efe9; --sky: #e6eef5; --peach: #f6e9e1; --line: #cdd8d2;
+  --warn: #9b2c2c; --warn-soft: #fbeaea; --focus: #f2b705;
+}
+* { box-sizing: border-box; }
+html { font-size: 125%; }
+html.bigger { font-size: 150%; }
+body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.55;
+  font-family: Verdana, Tahoma, "Segoe UI", system-ui, sans-serif; font-size: 1.05rem; }
+a { color: var(--brand-dark); text-underline-offset: .18em; }
+img { max-width: 100%; height: auto; }
+.skip { position: absolute; left: -999px; } .skip:focus { left: 16px; top: 8px; background: var(--surface); padding: .5rem; z-index: 2; }
+
+.top { background: var(--brand); color: var(--brand-ink); }
+.top-inner { max-width: 46rem; margin: 0 auto; padding: .7rem 16px; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; }
+.logo { display: flex; align-items: center; gap: .55rem; color: inherit; text-decoration: none; font-weight: bold; font-size: 1.3rem; margin-right: auto; }
+.logo img { width: 2.2rem; height: 2.2rem; }
+.textsize { color: inherit; font-size: .85rem; white-space: nowrap; }
+nav.menu { background: var(--brand-dark); }
+nav.menu ul { max-width: 46rem; margin: 0 auto; padding: .2rem 10px; list-style: none; display: flex; flex-wrap: wrap; }
+nav.menu a { display: block; color: var(--brand-ink); padding: .55rem .6rem; font-size: .9rem; text-decoration: none; }
+nav.menu a[aria-current] { text-decoration: underline; text-underline-offset: .3em; text-decoration-thickness: 3px; }
+
+main { max-width: 46rem; margin: 0 auto; padding: 1rem 16px 2rem; }
+h1 { font-size: 1.85rem; line-height: 1.2; margin: 1.2rem 0 .6rem; }
+h2 { font-size: 1.4rem; line-height: 1.25; margin: 2.2rem 0 .6rem; }
+h3 { font-size: 1.15rem; margin: 1.2rem 0 .3rem; }
+p, li { max-width: 36em; }
+p { margin: .7rem 0; }
+.lead { font-size: 1.15rem; }
+.muted { color: var(--muted); }
+
+.hero { text-align: center; }
+.hero img { width: 100%; max-width: 34rem; display: block; margin: .5rem auto 0; }
+
+.button, button { display: block; width: 100%; text-align: center; font: inherit; font-weight: bold; font-size: 1.1rem;
+  padding: 1rem 1.1rem; margin: .9rem 0; border-radius: 14px; border: 3px solid var(--brand);
+  background: var(--brand); color: var(--brand-ink); cursor: pointer; text-decoration: none; line-height: 1.3; }
+.button:hover, button:hover { background: var(--brand-dark); border-color: var(--brand-dark); }
+.button.secondary, button.secondary { background: var(--surface); color: var(--brand-dark); }
+.button.secondary:hover, button.secondary:hover { background: var(--sage); }
+button.danger { background: var(--surface); color: var(--warn); border-color: var(--warn); }
+button.small { display: inline-block; width: auto; font-size: .8rem; padding: .4rem .8rem; margin: .2rem .4rem .2rem 0; }
+button.link { display: inline; width: auto; background: none; border: none; padding: 0; margin: 0; color: var(--brand-dark);
+  text-decoration: underline; font-weight: normal; font-size: inherit; }
+button.link:hover { background: none; }
+.choice { display: flex; align-items: center; gap: 1rem; text-align: left; }
+.choice img { width: 3.6rem; height: 3.6rem; flex: none; }
+.choice span { display: block; }
+.choice small { display: block; font-weight: normal; font-size: .85rem; }
+
+.card { background: var(--surface); border: 2px solid var(--line); border-radius: 18px; padding: 1rem 1.2rem; margin: 1.2rem 0; }
+.card.sage { background: var(--sage); border-color: #b9d3c4; }
+.card.sky { background: var(--sky); border-color: #c4d6e6; }
+.card.peach { background: var(--peach); border-color: #ecd2c2; }
+.card > h1:first-child, .card > h2:first-child, .card > h3:first-child { margin-top: .2rem; }
+.with-pic { display: flex; gap: 1rem; align-items: flex-start; }
+.with-pic > img { width: 4.5rem; height: 4.5rem; flex: none; }
+.with-pic > div { flex: 1; min-width: 0; }
+.with-pic h2 { margin-top: .4rem; }
+@media (max-width: 560px) {
+  .with-pic { flex-direction: column; gap: .2rem; }
+  .with-pic > img { width: 3.5rem; height: 3.5rem; }
+}
+
+.steps { list-style: none; padding: 0; margin: 1rem 0; }
+.steps li { display: flex; gap: 1rem; align-items: flex-start; margin: 0 0 1.3rem; }
+.steps img { width: 4.5rem; height: 4.5rem; flex: none; }
+.steps h3 { margin: .2rem 0 .2rem; }
+.steps p { margin: .2rem 0; }
+
+label { display: block; font-weight: bold; margin: 1.3rem 0 .35rem; }
+.hint { display: block; font-weight: normal; color: var(--muted); font-size: .9rem; }
+input[type=text], input[type=tel], input[type=password], textarea, select {
+  width: 100%; font: inherit; font-size: 1.15rem; padding: .7rem .8rem; border: 3px solid #9fb3ab; border-radius: 12px;
+  background: var(--surface); color: var(--ink); }
+input.short { max-width: 9em; letter-spacing: .3em; }
+label.tick { display: flex; gap: .8rem; align-items: flex-start; font-weight: normal; }
+label.tick input { width: 1.6rem; height: 1.6rem; margin-top: .15rem; flex: none; }
+:focus-visible { outline: 4px solid var(--focus); outline-offset: 3px; }
+
+.message { border-radius: 14px; padding: .9rem 1.1rem; margin: 1rem 0; font-size: 1.05rem; }
+.message.good { background: var(--sage); border: 3px solid var(--brand); }
+.message.bad { background: var(--warn-soft); border: 3px solid var(--warn); }
+.phone { font-size: 1.6rem; font-weight: bold; letter-spacing: .04em; white-space: nowrap; }
+.row { display: flex; gap: .8rem; flex-wrap: wrap; } .row > * { flex: 1 1 11rem; }
+details summary { cursor: pointer; padding: .4rem 0; color: var(--brand-dark); }
+.faq details { background: var(--surface); border: 2px solid var(--line); border-radius: 14px; padding: .4rem 1rem; margin: .7rem 0; }
+.faq summary { font-weight: bold; color: var(--ink); padding: .6rem 0; }
+.tips li { margin-bottom: .7rem; }
+
+footer { background: var(--sage); margin-top: 2rem; }
+footer .inner { max-width: 46rem; margin: 0 auto; padding: 1.2rem 16px 2rem; }
+footer p { margin: .4rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: .75rem; background: var(--surface); }
+td, th { border: 1px solid var(--line); padding: .35rem; text-align: left; vertical-align: top; }
+pre { white-space: pre-wrap; font-size: .7rem; background: var(--sage); padding: .5rem; border-radius: 8px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the main part of the page</a>
+<header class="top"><div class="top-inner">
+<a class="logo" href="index.html"><img src="images/logo.svg" alt="">Lonely Oldies</a>
+<a class="textsize" href="bigger/groups.html">Make the text bigger</a>
+</div></header>
+<nav class="menu" aria-label="Main"><ul><li><a href="index.html">Home</a></li><li><a href="groups.html" aria-current="page">Group chats</a></li><li><a href="how-it-works.html">How it works</a></li><li><a href="safety.html">Staying safe</a></li><li><a href="questions.html">Questions</a></li></ul></nav>
+<main id="main">
+
+<h1>Group chats</h1>
+<div class="with-pic"><img src="images/group.svg" alt=""><div>
+<p class="lead">Chat with a few people who enjoy the same things as you.</p>
+</div></div>
+<ol class="steps">
+<li><div><h3>1. Choose a group</h3><p>Pick a hobby or topic below, and choose to chat on the phone or by text message.</p></div></li>
+<li><div><h3>2. We put you together</h3><p>When 3 or more people are free, we ring you all, or text you all. Up to 6 people can chat at once.</p></div></li>
+<li><div><h3>3. Leave whenever you like</h3><p>On the phone, just put the phone down. By text, send <strong>LEAVE</strong>. The others carry on.</p></div></li>
+</ol>
+<div class="card sage with-pic"><img src="images/shield.svg" alt=""><div>
+<p>Just like a chat with one person, <strong>nobody sees your phone number</strong>, and every text message is checked before it is passed on. If someone is unkind, tell us and you'll never be put together again.</p>
+</div></div>
+<p class="message good">To join in, please <a href="signin.html">sign in</a> or <a href="join.html">join Lonely Oldies</a> first. You can also ring us on <span class="phone" style="font-size:1.1rem">(not set up yet)</span> and press 6.</p>
+<div class="card sage" id="room-1">
+<h2>Gardening</h2>
+<p>Flowers, vegetables, allotments and what to plant next.</p>
+
+
+</div><div class="card sky" id="room-2">
+<h2>Books and reading</h2>
+<p>What you are reading, old favourites and recommendations.</p>
+
+
+</div><div class="card peach" id="room-3">
+<h2>Music and songs</h2>
+<p>The music you love, from big bands to the Beatles.</p>
+
+
+</div><div class="card sage" id="room-4">
+<h2>Sport</h2>
+<p>Football, cricket, tennis, horse racing and the old days.</p>
+
+
+</div><div class="card sky" id="room-5">
+<h2>Cooking and baking</h2>
+<p>Recipes, cakes and family favourites.</p>
+
+
+</div><div class="card peach" id="room-6">
+<h2>Pets and animals</h2>
+<p>Dogs, cats, birds and other animals in your life.</p>
+
+
+</div><div class="card sage" id="room-7">
+<h2>Travel and memories</h2>
+<p>Places you have been and stories from the past.</p>
+
+
+</div><div class="card sky" id="room-8">
+<h2>Quizzes and puzzles</h2>
+<p>Crosswords, quizzes and brain teasers.</p>
+
+
+</div><div class="card peach" id="room-9">
+<h2>Just a natter</h2>
+<p>A friendly chat about anything at all.</p>
+
+
+</div>
+
+</main>
+<footer><div class="inner">
+<p><strong>Need a hand?</strong> Ring us on <span class="phone" style="font-size:1.1rem">(not set up yet)</span> and we'll help you.</p>
+<p><a href="signin.html">Sign in</a> · <a href="join.html">Join</a></p>
+</div></footer>
+</body>
+</html>
