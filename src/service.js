@@ -41,7 +41,7 @@ export class Service {
 
   checkNotBanned(phone) {
     if (this.q('SELECT 1 FROM banned_phones WHERE phone = ?').get(phone)) {
-      throw new UserError('Sorry, this number cannot use Lonely Oldies.');
+      throw new UserError('Sorry, this number cannot use Tea and Company.');
     }
   }
 
@@ -71,7 +71,7 @@ export class Service {
       id = Number(this.q(`INSERT INTO users (name, pin_hash, verify_code, verify_expires, phone, created_at)
         VALUES (?, ?, ?, ?, ?, ?)`).run(...fields, phone, this.now()).lastInsertRowid);
     }
-    await this.telephony.sendSms(phone, `Your Lonely Oldies code is ${code}. Nobody from Lonely Oldies will ever ask you for it.`);
+    await this.telephony.sendSms(phone, `Your Tea and Company code is ${code}. Nobody from Tea and Company will ever ask you for it.`);
     return this.getUser(id);
   }
 
@@ -95,7 +95,7 @@ export class Service {
     const code = sixDigitCode();
     this.q('UPDATE users SET verify_code = ?, verify_expires = ? WHERE id = ?')
       .run(hashSecret(code), this.now() + 15 * 60 * 1000, userId);
-    await this.telephony.sendSms(user.phone, `Your Lonely Oldies code is ${code}.`);
+    await this.telephony.sendSms(user.phone, `Your Tea and Company code is ${code}.`);
   }
 
   // Someone ringing in from their own phone has shown they hold that number.
@@ -136,7 +136,7 @@ export class Service {
     const result = this.checkPin(user, pin);
     if (result.locked) throw new UserError('Too many wrong PINs. Please wait 15 minutes and try again.');
     if (!result.ok) throw new UserError('That phone number and PIN do not match.');
-    if (user.status === 'banned') throw new UserError('Sorry, this number cannot use Lonely Oldies.');
+    if (user.status === 'banned') throw new UserError('Sorry, this number cannot use Tea and Company.');
     return user;
   }
 
@@ -147,7 +147,7 @@ export class Service {
     const code = sixDigitCode();
     this.q('UPDATE users SET verify_code = ?, verify_expires = ? WHERE id = ?')
       .run(hashSecret(code), this.now() + 15 * 60 * 1000, user.id);
-    await this.telephony.sendSms(user.phone, `Your Lonely Oldies code to choose a new PIN is ${code}. Nobody from Lonely Oldies will ever ask you for it.`);
+    await this.telephony.sendSms(user.phone, `Your Tea and Company code to choose a new PIN is ${code}. Nobody from Tea and Company will ever ask you for it.`);
   }
 
   finishPinReset(rawPhone, code, pin) {
@@ -206,7 +206,7 @@ export class Service {
   blockedReason(user) {
     if (!user?.verified) return 'Please confirm your phone number first.';
     if (user.status === 'suspended') return 'Your account is paused while our team looks into a report. We will be in touch.';
-    if (user.status === 'banned') return 'Sorry, this number cannot use Lonely Oldies.';
+    if (user.status === 'banned') return 'Sorry, this number cannot use Tea and Company.';
     return 'Sorry, something went wrong.';
   }
 
@@ -481,7 +481,7 @@ export class Service {
     const how = `ring ${this.config.publicPhoneNumber} and press 2, or visit ${this.config.baseUrl}`;
     for (const [me, them] of [[a, b], [b, a]]) {
       try {
-        await this.telephony.sendSms(me.phone, `Good news from Lonely Oldies: you and ${them.name} would both like to talk again. To ring ${them.name}, ${how}.`);
+        await this.telephony.sendSms(me.phone, `Good news from Tea and Company: you and ${them.name} would both like to talk again. To ring ${them.name}, ${how}.`);
       } catch (err) {
         this.log.error?.('Could not send text', err);
       }
@@ -541,8 +541,8 @@ export class Service {
     if (call.medium === 'sms' && ['dialing', 'in_progress'].includes(call.status)) {
       await this.texts.end(call, {
         say: say ?? {
-          [userId]: `Lonely Oldies: thank you for telling us. ${other.name} has been blocked, the chat has ended, and our team will look into it.`,
-          [other.id]: `Lonely Oldies: your text chat with ${this.getUser(userId).name} has finished.`,
+          [userId]: `Tea and Company: thank you for telling us. ${other.name} has been blocked, the chat has ended, and our team will look into it.`,
+          [other.id]: `Tea and Company: your text chat with ${this.getUser(userId).name} has finished.`,
         },
       });
     }

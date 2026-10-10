@@ -23,7 +23,7 @@ const RULES = [
       || /\b\d+[a-z]?\s+[a-z']+(\s+[a-z']+)?\s+(street|st|road|rd|avenue|ave|lane|ln|close|drive|dr|crescent|court|grove|gardens|terrace|place|way)\b/i.test(t),
   },
   {
-    reason: 'a way to talk outside Lonely Oldies',
+    reason: 'a way to talk outside Tea and Company',
     category: 'contact',
     test: (t) => /\b(whats\s?app|telegram|signal app|snapchat|instagram|facebook|messenger|skype|zoom|my number|your number|home number|mobile number|where do you live|your address|meet (up|me|in person))\b/i.test(t),
   },

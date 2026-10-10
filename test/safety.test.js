@@ -69,7 +69,7 @@ test('reporting blocks the person, and reports from two people pause their accou
     await t.service.ban(bad, 'Scam attempt');
     await assert.rejects(t.service.register({ name: 'Rogue', phone: '07700 900041', pin: '2468' }), /cannot use/);
     const ring = await t.post('/voice/incoming', { From: '+447700900041', CallSid: 'CAx' });
-    assert.match(ring.text, /cannot use Lonely Oldies/);
+    assert.match(ring.text, /cannot use Tea and Company/);
   } finally {
     t.close();
   }

@@ -53,7 +53,7 @@ test('a phone group chat rings everyone once enough people are free, and keeps n
     res = await t.post(`/voice/group-answer?chat=${chat.id}&user=${m}`, { Digits: '1' });
     assert.match(res.text, /startConferenceOnEnter="false"/, 'the first one waits on hold');
     assert.match(res.text, /endConferenceOnExit="false"/);
-    assert.match(res.text, new RegExp(`lonely-oldies-group-${chat.id}`));
+    assert.match(res.text, new RegExp(`tea-and-company-group-${chat.id}`));
     res = await t.post(`/voice/group-answer?chat=${chat.id}&user=${a}`, { Digits: '1' });
     assert.match(res.text, /startConferenceOnEnter="true"/);
     assert.equal(t.service.groups.getChat(chat.id).status, 'in_progress');

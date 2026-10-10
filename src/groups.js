@@ -225,7 +225,7 @@ export class Groups {
   }
 
   roomName(chat) {
-    return this.getRoom(chat.room_id)?.name ?? 'Lonely Oldies';
+    return this.getRoom(chat.room_id)?.name ?? 'Tea and Company';
   }
 
   names(list) {
@@ -235,7 +235,7 @@ export class Groups {
 
   textWelcome(chat, userId) {
     const others = this.people(chat.id, ['joined']).filter((p) => p.user_id !== userId);
-    return `Lonely Oldies: welcome to the ${this.roomName(chat)} group chat${others.length ? ` with ${this.names(others)}` : ''}. Reply to this number and everyone in the group will see your message. Never share your address, phone number or bank details. Text LEAVE to leave the chat. If someone upsets you, text REPORT and their name.`;
+    return `Tea and Company: welcome to the ${this.roomName(chat)} group chat${others.length ? ` with ${this.names(others)}` : ''}. Reply to this number and everyone in the group will see your message. Never share your address, phone number or bank details. Text LEAVE to leave the chat. If someone upsets you, text REPORT and their name.`;
   }
 
   // ---------- phone group chats ----------
@@ -339,10 +339,10 @@ export class Groups {
         : list.filter((p) => p.name.toLowerCase() === cleanName(target).toLowerCase());
       const person = Array.isArray(match) ? (match.length === 1 ? match[0] : null) : match;
       if (!person) {
-        return this.send(user, `Lonely Oldies: who would you like to report? Reply REPORT and a number: ${list.map((p, i) => `${i + 1} for ${p.name}`).join(', ') || 'nobody else is here'}.`);
+        return this.send(user, `Tea and Company: who would you like to report? Reply REPORT and a number: ${list.map((p, i) => `${i + 1} for ${p.name}`).join(', ') || 'nobody else is here'}.`);
       }
       await this.report(user.id, chat.id, person.user_id, 'Reported by text message during a group chat.');
-      return this.send(user, `Lonely Oldies: thank you for telling us. ${person.name} has been removed from this chat and will never be put in touch with you again. Our team will look into it.`);
+      return this.send(user, `Tea and Company: thank you for telling us. ${person.name} has been removed from this chat and will never be put in touch with you again. Our team will look into it.`);
     }
     return this.relay(chat, user, body);
   }
@@ -365,7 +365,7 @@ export class Groups {
       await this.report(sender.id, chat.id, sender.id, `Automatic report: ${stopped} messages from ${sender.name} in a group chat were stopped by screening.`);
       return;
     }
-    await this.send(sender, `Lonely Oldies: sorry, that message wasn't passed on because it looked like it had ${check.reason}. ${check.category === 'length' ? 'Please send it in smaller parts.' : "To keep everyone safe we don't pass on phone numbers, addresses, links, or anything about money."}`);
+    await this.send(sender, `Tea and Company: sorry, that message wasn't passed on because it looked like it had ${check.reason}. ${check.category === 'length' ? 'Please send it in smaller parts.' : "To keep everyone safe we don't pass on phone numbers, addresses, links, or anything about money."}`);
   }
 
   // ---------- safety ----------
@@ -393,7 +393,7 @@ export class Groups {
     const p = this.participant(chat.id, userId);
     if (!p || !['dialing', 'joined'].includes(p.state) || !['dialing', 'in_progress'].includes(chat.status)) return;
     if (chat.medium === 'sms') {
-      return this.leaveText(chat, s.getUser(userId), `Lonely Oldies: you have been removed from the ${this.roomName(chat)} group chat. Our team will look into what happened.`);
+      return this.leaveText(chat, s.getUser(userId), `Tea and Company: you have been removed from the ${this.roomName(chat)} group chat. Our team will look into what happened.`);
     }
     this.q(`UPDATE group_participants SET state = 'removed', left_at = ? WHERE chat_id = ? AND user_id = ?`).run(s.now(), chat.id, userId);
     if (p.sid) await s.telephony.hangUp(p.sid);

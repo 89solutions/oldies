@@ -1,4 +1,4 @@
-# Lonely Oldies
+# Tea and Company
 
 _Making old lonely peoples lives better._
 
@@ -22,7 +22,7 @@ There are no `.html` files in `src/`: the app builds each page when someone visi
 
 ```
  Margaret's phone ◀── rung from SERVICE NUMBER ──┐
-                                                  ├── private conference "lonely-oldies-call-42"
+                                                  ├── private conference "tea-and-company-call-42"
  Arthur's phone   ◀── rung from SERVICE NUMBER ──┘
 ```
 
@@ -114,7 +114,7 @@ Rooms ("groups") are hobbies or topics. Nine starter groups are created on first
 
 - **Joining** works like a one-to-one chat: say you're free, but for a particular group, by phone or by text. Website: "Group chats" page. Phone menu: press 6. Text: `GROUPS`, then `JOIN` and a number.
 - **Starting**: once `GROUP_MIN_SIZE` (3) people are waiting for the same group and the same kind of chat, the matcher starts one. Later arrivals are added to a chat that's already going, up to `GROUP_MAX_SIZE` (6). People who've blocked each other are never put in the same group chat.
-- **By phone**: everyone is rung from the service number and hears the group's name and the first names of the others; press 1 to join. They meet in a private conference `lonely-oldies-group-<id>`. The first in waits on hold. One person leaving (`*` or hanging up) doesn't end it for the rest. When only one person is left, they're told everyone else has gone (or, if it never got going, kept on the list).
+- **By phone**: everyone is rung from the service number and hears the group's name and the first names of the others; press 1 to join. They meet in a private conference `tea-and-company-group-<id>`. The first in waits on hold. One person leaving (`*` or hanging up) doesn't end it for the rest. When only one person is left, they're told everyone else has gone (or, if it never got going, kept on the list).
 - **By text**: each message is screened and then sent to everyone else as "Gardening group, Margaret: …". `WHO` lists who's there, `LEAVE` leaves, `REPORT` and a name or number reports someone.
 - **Safety**: reporting someone in a group blocks them for you, takes them out of the chat at once, and counts towards pausing their account like any other report. 3 stopped messages take the sender out of the group and report them automatically. After a phone group chat, press 9 to report someone by name. Website: "Someone in this group upset me". The team page shows group reports, stopped group messages and the text of reported group chats.
 - Group chats count towards the daily chat limit. There's no "talk again" vote after a group chat; people who get on can meet again in the same group.
