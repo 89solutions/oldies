@@ -88,6 +88,9 @@ input[type=text], input[type=tel], input[type=password], textarea, select {
 input.short { max-width: 9em; letter-spacing: .3em; }
 label.tick { display: flex; gap: .8rem; align-items: flex-start; font-weight: normal; }
 label.tick input { width: 1.6rem; height: 1.6rem; margin-top: .15rem; flex: none; }
+fieldset { border: 2px solid var(--line); border-radius: 14px; margin: 1.3rem 0; padding: .3rem 1rem .8rem; background: var(--surface); }
+legend { font-weight: bold; padding: 0 .3rem; }
+fieldset label.tick { margin: .7rem 0; }
 :focus-visible { outline: 4px solid var(--focus); outline-offset: 3px; }
 
 .message { border-radius: 14px; padding: .9rem 1.1rem; margin: 1rem 0; font-size: 1.05rem; }

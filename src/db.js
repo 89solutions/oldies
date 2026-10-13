@@ -167,6 +167,12 @@ const ADDED_COLUMNS = [
   ['calls', 'last_activity_at', 'INTEGER'],
   ['users', 'available_room', 'INTEGER'],                           // set when waiting for a group chat
   ['reports', 'group_chat_id', 'INTEGER'],                          // set for reports about a group chat
+  // Who you'd like to chat with. 'unsaid' gender only matches people happy to chat with anyone.
+  ['users', 'gender', "TEXT NOT NULL DEFAULT 'unsaid' CHECK (gender IN ('female','male','unsaid'))"],
+  ['users', 'wants', "TEXT NOT NULL DEFAULT 'anyone' CHECK (wants IN ('anyone','women','men'))"],
+  ['users', 'waiting_since', 'INTEGER'],                            // when this wait for a one-to-one chat began
+  // "Would you like to speak to a man this time?" for this wait only: offered | declined | accepted
+  ['users', 'one_off', "TEXT CHECK (one_off IN ('offered','declined','accepted'))"],
 ];
 
 export function openDb(path) {

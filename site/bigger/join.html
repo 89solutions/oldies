@@ -88,6 +88,9 @@ input[type=text], input[type=tel], input[type=password], textarea, select {
 input.short { max-width: 9em; letter-spacing: .3em; }
 label.tick { display: flex; gap: .8rem; align-items: flex-start; font-weight: normal; }
 label.tick input { width: 1.6rem; height: 1.6rem; margin-top: .15rem; flex: none; }
+fieldset { border: 2px solid var(--line); border-radius: 14px; margin: 1.3rem 0; padding: .3rem 1rem .8rem; background: var(--surface); }
+legend { font-weight: bold; padding: 0 .3rem; }
+fieldset label.tick { margin: .7rem 0; }
 :focus-visible { outline: 4px solid var(--focus); outline-offset: 3px; }
 
 .message { border-radius: 14px; padding: .9rem 1.1rem; margin: 1rem 0; font-size: 1.05rem; }
@@ -130,6 +133,17 @@ pre { white-space: pre-wrap; font-size: .7rem; background: var(--sage); padding:
 <input id="pin" name="pin" class="short" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
 <label for="pin2">Type the same 4 numbers again</label>
 <input id="pin2" name="pin2" class="short" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
+<fieldset><legend>About you <span class="hint">So we can put you in touch with the right people.</span></legend>
+
+<label class="tick"><input type="radio" name="gender" value="female"><span>I&#39;m a woman</span></label>
+<label class="tick"><input type="radio" name="gender" value="male"><span>I&#39;m a man</span></label>
+<label class="tick"><input type="radio" name="gender" value="unsaid" checked><span>I&#39;d rather not say</span></label></fieldset>
+<fieldset><legend>Who would you like to chat with?</legend>
+
+<label class="tick"><input type="radio" name="wants" value="anyone" checked><span>Anyone</span></label>
+<label class="tick"><input type="radio" name="wants" value="women"><span>Women only</span></label>
+<label class="tick"><input type="radio" name="wants" value="men"><span>Men only</span></label>
+<p class="hint">If nobody like that is free after a little while, we'll ask if you'd like to chat with someone else that time. You can always say no and keep waiting. Group chats are open to everyone.</p></fieldset>
 <label class="tick"><input type="checkbox" name="agree" value="1" required><span>I have read <a href="safety.html" target="_blank">Staying safe</a>, and I'll be kind to the people I chat to.</span></label>
 <button>Carry on</button>
 </form>

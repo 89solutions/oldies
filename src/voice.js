@@ -116,6 +116,7 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     if (service.isAvailable(user)) prompt.push("If you don't want any calls for now, press 3.");
     const pending = service.pendingFeedback(user.id)[0];
     if (pending) prompt.push(`To tell us if you'd like to talk to ${pending.other_name} again, press 4.`);
+    prompt.push("To choose who you'd like to chat with, women, men or anyone, press 7.");
     if (service.lastCall(user.id)) {
       prompt.push("If you're worried about how the person from your last chat is doing, press 8.");
       prompt.push('If someone on your last call was unkind or upset you, press 9.');
@@ -137,6 +138,9 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
         return xml(res, vr);
       case '6':
         vr.redirect({ method: 'POST' }, '/voice/groups');
+        return xml(res, vr);
+      case '7':
+        vr.redirect({ method: 'POST' }, '/voice/choices');
         return xml(res, vr);
       case '5':
         service.setAvailable(user.id, true, 'sms');
@@ -291,7 +295,110 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     service.ivrSet(req.body.CallSid, { userId: user.id, data: {} });
     const vr = new VoiceResponse();
     sayer(vr)("You're all set up. Please write your PIN down and keep it somewhere safe. Never tell it to anyone, not even us.");
+    vr.redirect({ method: 'POST' }, '/voice/choices');
+    xml(res, vr);
+  }));
+
+  // ---------- who you'd like to chat with ----------
+
+  const WANTS_WORDS = { anyone: 'anyone', women: 'women only', men: 'men only' };
+
+  // Asked when joining by phone, and from the menu (press 7). Pressing nothing
+  // leaves things as they were and goes on to the menu.
+  router.post('/choices', wrap(async (req, res) => {
+    const user = menuUser(req);
+    if (!user) return goodbye(res, 'Sorry, please ring again. Goodbye.');
+    const vr = new VoiceResponse();
+    if (retryOf(req) >= 1) {
+      vr.redirect({ method: 'POST' }, '/voice/menu');
+      return xml(res, vr);
+    }
+    const gather = vr.gather({ numDigits: 1, action: '/voice/choices-gender', method: 'POST', timeout: 8, actionOnEmptyResult: false });
+    for (const line of ['So we can put you in touch with the right people, are you a woman or a man?',
+      "If you're a woman, press 1.", "If you're a man, press 2.", "If you'd rather not say, press 3."]) {
+      gather.say({ voice: config.voice, language: config.voiceLanguage }, line);
+    }
+    vr.redirect({ method: 'POST' }, '/voice/choices?retry=1');
+    xml(res, vr);
+  }));
+
+  router.post('/choices-gender', wrap(async (req, res) => {
+    const gender = { 1: 'female', 2: 'male', 3: 'unsaid' }[req.body.Digits];
+    if (!gender) {
+      const vr = new VoiceResponse();
+      vr.redirect({ method: 'POST' }, '/voice/choices');
+      return xml(res, vr);
+    }
+    service.ivrSet(req.body.CallSid, { data: { ...service.ivrData(req.body.CallSid), gender } });
+    ask(res, {
+      prompt: ['Thank you. And who would you like to chat with?', 'To chat with anyone, press 1.',
+        'To chat with women only, press 2.', 'To chat with men only, press 3.'],
+      action: '/voice/choices-wants', retryUrl: '/voice/choices-gender-retry', retry: retryOf(req),
+    });
+  }));
+
+  router.post('/choices-gender-retry', wrap(async (req, res) => ask(res, {
+    prompt: ['To chat with anyone, press 1.', 'To chat with women only, press 2.', 'To chat with men only, press 3.'],
+    action: '/voice/choices-wants', retryUrl: '/voice/choices-gender-retry', retry: retryOf(req),
+  })));
+
+  router.post('/choices-wants', wrap(async (req, res) => {
+    const user = menuUser(req);
+    if (!user) return goodbye(res, 'Sorry, please ring again. Goodbye.');
+    const wants = { 1: 'anyone', 2: 'women', 3: 'men' }[req.body.Digits];
+    const { gender } = service.ivrData(req.body.CallSid);
+    const vr = new VoiceResponse();
+    if (wants && gender) {
+      service.setChoices(user.id, { gender, wants });
+      sayer(vr)(wants === 'anyone'
+        ? "Thank you. We'll put you in touch with anyone who's free."
+        : `Thank you. We'll put you in touch with ${WANTS_WORDS[wants]}. If nobody like that is free after a little while, we'll ask if you'd like to chat with someone else that time. You can change this at any time by pressing 7.`);
+    }
     vr.redirect({ method: 'POST' }, '/voice/menu');
+    xml(res, vr);
+  }));
+
+  // We ring someone who has waited a while for (say) a woman, when only men
+  // are free. Saying yes is for this one chat; their choice stays as it is.
+  router.post('/offer', wrap(async (req, res) => {
+    const user = service.getUser(Number(req.query.user));
+    if (!user || (req.body.To && req.body.To !== user.phone)) return goodbye(res, 'Goodbye.');
+    const other = service.choiceOffer(user);
+    if (!other) {
+      return goodbye(res, `Hello ${user.name}, this is Tea and Company. We're still looking for someone for you to chat with, and we'll ring you when they're free. Goodbye for now.`);
+    }
+    const words = service.offerWords(user, other);
+    ask(res, {
+      prompt: [`Hello ${user.name}, this is Tea and Company.`, words.none, words.question,
+        `To speak to ${words.instead} this time, press 1.`, `To keep waiting for ${words.keepWaiting}, press 2.`],
+      action: url('/voice/offer-answer', { user: user.id }),
+      retryUrl: url('/voice/offer', { user: user.id }), retry: retryOf(req),
+      giveUp: `We'll keep looking for ${words.keepWaiting} for you. Goodbye.`,
+    });
+  }));
+
+  router.post('/offer-answer', wrap(async (req, res) => {
+    const user = service.getUser(Number(req.query.user));
+    if (!user || (req.body.To && req.body.To !== user.phone)) return goodbye(res, 'Goodbye.');
+    const keepWaiting = user.wants === 'men' ? 'a man' : 'a woman';
+    if (req.body.Digits === '2') {
+      service.declineOffer(user.id);
+      return goodbye(res, `That's fine. We'll keep looking for ${keepWaiting} for you, and ring you when one is free. Goodbye for now.`);
+    }
+    if (req.body.Digits !== '1') {
+      const vr = new VoiceResponse();
+      vr.redirect({ method: 'POST' }, url('/voice/offer', { user: user.id, retry: 1 }));
+      return xml(res, vr);
+    }
+    service.acceptOffer(user.id);
+    // They're already on the line, so try to put them through straight away.
+    const call = await service.matchNow(user.id, { aSid: req.body.CallSid });
+    if (!call) {
+      setImmediate(onAvailable);
+      return goodbye(res, "Lovely. We'll ring you back as soon as someone is free for a chat. Goodbye for now.");
+    }
+    const vr = new VoiceResponse();
+    vr.redirect({ method: 'POST' }, url('/voice/leg', { call: call.id, leg: 'a', onLine: 1 }));
     xml(res, vr);
   }));
 
@@ -312,8 +419,9 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     const action = url('/voice/leg-answer', { call: call.id, leg });
     const notNow = "If now isn't a good time, press 2.";
 
-    if (call.kind === 'reconnect' && leg === 'a' && req.query.onLine && call.a_sid === req.body.CallSid) {
-      // They chose this friend from the phone menu and are already on the line.
+    if (leg === 'a' && req.query.onLine && call.a_sid === req.body.CallSid) {
+      // They chose this friend from the phone menu, or said yes to someone else
+      // this time when we rang them, and are already on the line.
       service.legJoined(call.id, 'a');
       return joinConference(res, call.id, 'a', `We're ringing ${them.name} for you now. Please hold on.`);
     }
@@ -587,14 +695,17 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
   }));
 
   // Set as the phone number's "call status changes" webhook, so we know when
-  // someone who rang a friend from the phone menu has hung up.
-  router.post('/incoming-status', wrap(async (req, res) => {
+  // someone who rang a friend from the phone menu has hung up. Offer calls
+  // report here too, as the person may have been put through on that call.
+  const lineEnded = wrap(async (req, res) => {
     if (ENDED.has(req.body.CallStatus)) {
       const call = service.q(`SELECT id FROM calls WHERE a_sid = ? AND status IN ('dialing','in_progress')`).get(req.body.CallSid);
       if (call) await service.legEnded(call.id, 'a');
     }
     res.status(204).end();
-  }));
+  });
+  router.post('/incoming-status', lineEnded);
+  router.post('/offer-status', lineEnded);
 
   return router;
 }

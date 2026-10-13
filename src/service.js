@@ -14,6 +14,24 @@ export class UserError extends Error {}
 const DAY = 24 * 60 * 60 * 1000;
 const ACTIVE_CALL = `status IN ('dialing','in_progress')`;
 export const CONCERN_STATUSES = ['new', 'in_review', 'actioned', 'closed'];
+export const GENDERS = ['female', 'male', 'unsaid'];
+export const WANTS = ['anyone', 'women', 'men'];
+
+// Would someone who wants `wants` be happy to chat with someone of `gender`?
+// "Rather not say" only fits people who are happy to chat with anyone.
+export function fits(wants, gender) {
+  if (wants === 'women') return gender === 'female';
+  if (wants === 'men') return gender === 'male';
+  return true;
+}
+
+// Whether two people can be matched: each person's choice must fit the other.
+// With `relaxed`, someone who said "yes, anyone this time" (one_off = 'accepted')
+// is relaxed about their own choice for this one chat, but the other person's still counts.
+export function suits(a, b, { relaxed = false } = {}) {
+  const ok = (me, them) => fits(me.wants, them.gender) || (relaxed && me.one_off === 'accepted');
+  return ok(a, b) && ok(b, a);
+}
 
 export class Service {
   constructor({ db, config, telephony, log = console, now = () => Date.now() }) {
@@ -51,26 +69,27 @@ export class Service {
     if (isWeakPin(pin)) throw new UserError('That PIN is too easy to guess. Please choose different numbers.');
   }
 
-  async register({ name, phone: rawPhone, pin }) {
+  async register({ name, phone: rawPhone, pin, gender, wants }) {
     const firstName = cleanName(name);
     if (!firstName) throw new UserError('Please tell us your first name.');
     const phone = this.phone(rawPhone);
     this.validatePin(pin);
+    const choices = this.checkChoices({ gender, wants });
     this.checkNotBanned(phone);
     const existing = this.getUserByPhone(phone);
     if (existing?.verified) throw new UserError('That number is already registered. Please sign in instead.');
 
     const code = sixDigitCode();
-    const fields = [firstName, hashSecret(pin), hashSecret(code), this.now() + 15 * 60 * 1000];
+    const fields = [firstName, hashSecret(pin), hashSecret(code), this.now() + 15 * 60 * 1000, choices.gender, choices.wants];
     let id;
     if (existing) {
       // Unverified sign-up being retried: start again.
-      this.q('UPDATE users SET name = ?, pin_hash = ?, verify_code = ?, verify_expires = ? WHERE id = ?')
+      this.q('UPDATE users SET name = ?, pin_hash = ?, verify_code = ?, verify_expires = ?, gender = ?, wants = ? WHERE id = ?')
         .run(...fields, existing.id);
       id = existing.id;
     } else {
-      id = Number(this.q(`INSERT INTO users (name, pin_hash, verify_code, verify_expires, phone, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)`).run(...fields, phone, this.now()).lastInsertRowid);
+      id = Number(this.q(`INSERT INTO users (name, pin_hash, verify_code, verify_expires, gender, wants, phone, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(...fields, phone, this.now()).lastInsertRowid);
     }
     await this.telephony.sendSms(phone, `Your Tea and Company code is ${code}. Nobody from Tea and Company will ever ask you for it.`);
     return this.getUser(id);
@@ -100,19 +119,20 @@ export class Service {
   }
 
   // Someone ringing in from their own phone has shown they hold that number.
-  registerByPhone({ phone, name, pin }) {
+  registerByPhone({ phone, name, pin, gender, wants }) {
     this.checkNotBanned(phone);
+    const choices = this.checkChoices({ gender, wants });
     this.validatePin(pin);
     const firstName = cleanName(name) || 'Friend';
     const existing = this.getUserByPhone(phone);
     if (existing?.verified) throw new UserError('That number is already registered.');
     if (existing) {
-      this.q('UPDATE users SET name = ?, pin_hash = ?, verified = 1, verify_code = NULL WHERE id = ?')
-        .run(firstName, hashSecret(pin), existing.id);
+      this.q('UPDATE users SET name = ?, pin_hash = ?, verified = 1, verify_code = NULL, gender = ?, wants = ? WHERE id = ?')
+        .run(firstName, hashSecret(pin), choices.gender, choices.wants, existing.id);
       return this.getUser(existing.id);
     }
-    const id = this.q('INSERT INTO users (phone, name, pin_hash, verified, created_at) VALUES (?, ?, ?, 1, ?)')
-      .run(phone, firstName, hashSecret(pin), this.now()).lastInsertRowid;
+    const id = this.q('INSERT INTO users (phone, name, pin_hash, verified, gender, wants, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)')
+      .run(phone, firstName, hashSecret(pin), choices.gender, choices.wants, this.now()).lastInsertRowid;
     return this.getUser(Number(id));
   }
 
@@ -170,6 +190,118 @@ export class Service {
     return this.q('SELECT * FROM users WHERE id = ?').get(id);
   }
 
+  // ---------- who you'd like to chat with ----------
+  // Applies to one-to-one chats (phone and text). Group chats are about a
+  // hobby and are open to everyone in that group.
+
+  checkChoices({ gender, wants }) {
+    const g = gender || 'unsaid';
+    const w = wants || 'anyone';
+    if (!GENDERS.includes(g)) throw new UserError('Please choose whether you are a woman or a man, or would rather not say.');
+    if (!WANTS.includes(w)) throw new UserError('Please choose who you would like to chat with.');
+    return { gender: g, wants: w };
+  }
+
+  // Changing your choice starts afresh: any "anyone this time" answer is forgotten.
+  setChoices(userId, choices) {
+    const { gender, wants } = this.checkChoices(choices);
+    this.q('UPDATE users SET gender = ?, wants = ?, one_off = NULL WHERE id = ?').run(gender, wants, userId);
+    return this.getUser(userId);
+  }
+
+  // When someone has waited a while for the kind of person they asked for, and
+  // nobody like that is free but someone else is (who'd be happy to chat with
+  // them, in the same way: phone or text), we offer them that person just this
+  // once. Returns who we'd offer, or null.
+  choiceOffer(user, waiting) {
+    if (!user || user.wants === 'anyone' || !this.isAvailable(user) || user.available_room) return null;
+    if (user.one_off === 'declined' || user.one_off === 'accepted') return null;
+    if (!user.waiting_since || this.now() - user.waiting_since < this.config.preferenceWaitMinutes * 60 * 1000) return null;
+    const others = (waiting ?? this.waitingUsers(user.available_medium))
+      .filter((o) => o.id !== user.id && !this.isBlockedPair(user.id, o.id));
+    if (!others.length || others.some((o) => suits(user, o))) return null; // someone suitable is free
+    return others.find((o) => suits({ ...user, one_off: 'accepted' }, o, { relaxed: true })) ?? null;
+  }
+
+  // The words for the offer, for example "No female callers are available right
+  // now. Would you like to speak to a man this time?"
+  offerWords(user, other) {
+    const byText = user.available_medium === 'sms';
+    const wanted = user.wants === 'women' ? 'female' : 'male';
+    const instead = other.gender === 'male' ? 'a man' : other.gender === 'female' ? 'a woman' : 'someone else';
+    return {
+      none: byText ? `No ${user.wants} are free for a text chat right now.` : `No ${wanted} callers are available right now.`,
+      question: `Would you like to ${byText ? 'text with' : 'speak to'} ${instead} this time?`,
+      instead,
+      keepWaiting: user.wants === 'women' ? 'a woman' : 'a man',
+    };
+  }
+
+  // "Yes please, anyone this time." Only lasts until this person's next chat
+  // starts; their saved choice never changes.
+  acceptOffer(userId) {
+    const user = this.getUser(userId);
+    if (!this.isAvailable(user)) throw new UserError("You're not on the list for a chat at the moment.");
+    this.q(`UPDATE users SET one_off = 'accepted' WHERE id = ?`).run(userId);
+  }
+
+  // "No thanks, I'll keep waiting." We won't ask again while they wait this time.
+  declineOffer(userId) {
+    this.q(`UPDATE users SET one_off = 'declined' WHERE id = ?`).run(userId);
+  }
+
+  // Asks each person who has waited long enough, once per wait: we ring
+  // people waiting for a phone chat, and text people waiting for a text chat.
+  async sendChoiceOffers() {
+    const offered = [];
+    for (const medium of ['voice', 'sms']) {
+      const waiting = this.waitingUsers(medium);
+      for (const user of waiting) {
+        if (user.one_off) continue;
+        const other = this.choiceOffer(user, waiting);
+        if (!other) continue;
+        this.q(`UPDATE users SET one_off = 'offered' WHERE id = ?`).run(user.id);
+        try {
+          if (medium === 'sms') {
+            const words = this.offerWords(user, other);
+            await this.telephony.sendSms(user.phone, `Tea and Company: ${words.none} ${words.question} Reply YES for ${words.instead} this time, or WAIT to keep waiting for ${words.keepWaiting}.`);
+          } else {
+            await this.telephony.placeCall({
+              to: user.phone,
+              url: `${this.config.baseUrl}/voice/offer?user=${user.id}`,
+              statusCallback: `${this.config.baseUrl}/voice/offer-status?user=${user.id}`,
+            });
+          }
+          offered.push(user.id);
+        } catch (err) {
+          this.log.error?.('Could not send an offer', err);
+        }
+      }
+    }
+    return offered;
+  }
+
+  // Someone said yes to the offer while on the phone: find them a partner now,
+  // so they can stay on the line. Returns the new call, or null if the person
+  // we had in mind has gone (they stay on the list either way).
+  async matchNow(userId, { aSid } = {}) {
+    const user = this.getUser(userId);
+    if (!this.isAvailable(user) || user.available_medium !== 'voice' || user.available_room) return null;
+    const others = this.waitingUsers('voice').filter((o) => o.id !== userId && !this.isBlockedPair(userId, o.id)
+      && suits(user, o, { relaxed: true }));
+    // Someone they chose first, then someone they haven't spoken to lately.
+    others.sort((x, y) => Number(!suits(user, x)) - Number(!suits(user, y))
+      || Number(this.spokeRecently(userId, x.id)) - Number(this.spokeRecently(userId, y.id)));
+    for (const other of others) {
+      try {
+        return await this.startCall('random', userId, other.id, { aSid });
+      } catch (err) {
+        if (!(err instanceof UserError)) throw err;
+      }
+    }
+    return null;
+  }
+
   getUserByPhone(phone) {
     return this.q('SELECT * FROM users WHERE phone = ?').get(phone);
   }
@@ -196,10 +328,15 @@ export class Service {
     }
     const until = on ? this.now() + this.config.availableForMinutes * 60 * 1000 : null;
     if (on) {
-      this.q('UPDATE users SET available_until = ?, available_medium = ?, available_room = ? WHERE id = ?')
-        .run(until, medium === 'sms' ? 'sms' : 'voice', roomId ?? null, userId);
+      // Saying "I'm free" again while already waiting keeps your place (and
+      // your answer to any offer); a new wait starts afresh.
+      const now = this.now();
+      this.q(`UPDATE users SET available_until = ?, available_medium = ?, available_room = ?,
+          waiting_since = CASE WHEN available_until > ? THEN waiting_since ELSE ? END,
+          one_off = CASE WHEN available_until > ? THEN one_off ELSE NULL END
+        WHERE id = ?`).run(until, medium === 'sms' ? 'sms' : 'voice', roomId ?? null, now, now, now, userId);
     } else {
-      this.q('UPDATE users SET available_until = NULL, available_room = NULL WHERE id = ?').run(userId);
+      this.q('UPDATE users SET available_until = NULL, available_room = NULL, waiting_since = NULL, one_off = NULL WHERE id = ?').run(userId);
     }
     return until;
   }
@@ -244,33 +381,48 @@ export class Service {
   // Pairs up people who are waiting, at random, never pairing anyone with
   // someone they've blocked (or who blocked them). People who've spoken in the
   // last few days are only paired again if there's nobody new for them.
-  // People are only paired with someone who wants the same kind of chat.
+  // People are only paired with someone who wants the same kind of chat, and
+  // whose choice of who to chat with (anyone, women, men) fits each other.
   findPairs(random = Math.random) {
     const pairs = [];
     for (const medium of ['voice', 'sms']) {
-      for (const [a, b] of this.pairUp(this.waitingFor(medium), random)) pairs.push([a, b, medium]);
+      for (const [a, b] of this.pairUp(this.waitingUsers(medium), random)) pairs.push([a, b, medium]);
     }
     return pairs;
   }
 
   waitingFor(medium) {
-    return this.q(`SELECT id FROM users WHERE status = 'active' AND verified = 1 AND available_until > ?
+    return this.waitingUsers(medium).map((u) => u.id);
+  }
+
+  // People waiting for a one-to-one chat of this kind, and not already in a chat.
+  waitingUsers(medium) {
+    return this.q(`SELECT * FROM users WHERE status = 'active' AND verified = 1 AND available_until > ?
       AND available_medium = ? AND available_room IS NULL
       AND id NOT IN (SELECT user_a FROM calls WHERE ${ACTIVE_CALL})
       AND id NOT IN (SELECT user_b FROM calls WHERE ${ACTIVE_CALL})
       AND id NOT IN (SELECT p.user_id FROM group_participants p JOIN group_chats g ON g.id = p.chat_id
-        WHERE p.state IN ('dialing','joined') AND g.status IN ('dialing','in_progress'))`).all(this.now(), medium).map((r) => r.id);
+        WHERE p.state IN ('dialing','joined') AND g.status IN ('dialing','in_progress'))`).all(this.now(), medium);
   }
 
-  pairUp(waiting, random) {
+  // Someone who said "anyone this time" is paired with someone they chose if possible.
+  pairUp(people, random) {
+    const users = new Map(people.map((u) => [u.id, u]));
+    const waiting = [...users.keys()];
     const blocked = new Set();
     const recent = new Set();
+    const offChoice = new Set(); // only allowed because one of them said "anyone this time"
     const key = (x, y) => (x < y ? `${x}:${y}` : `${y}:${x}`);
     for (const a of waiting) {
       for (const b of waiting) {
         if (a >= b) continue;
-        if (this.isBlockedPair(a, b)) blocked.add(key(a, b));
-        else if (this.spokeRecently(a, b)) recent.add(key(a, b));
+        const [ua, ub] = [users.get(a), users.get(b)];
+        if (this.isBlockedPair(a, b) || !suits(ua, ub, { relaxed: true })) {
+          blocked.add(key(a, b));
+          continue;
+        }
+        if (!suits(ua, ub)) offChoice.add(key(a, b));
+        if (this.spokeRecently(a, b)) recent.add(key(a, b));
       }
     }
     // Try a few random orders and keep the one with the most chats and fewest repeats.
@@ -284,20 +436,22 @@ export class Service {
       const pairs = [];
       const used = new Set();
       let repeats = 0;
-      for (const allowRepeat of [false, true]) {
+      let offChoices = 0;
+      for (const [allowOffChoice, allowRepeat] of [[false, false], [false, true], [true, false], [true, true]]) {
         for (const a of order) {
           if (used.has(a)) continue;
           const b = order.find((c) => c !== a && !used.has(c) && !blocked.has(key(a, c))
-            && (allowRepeat || !recent.has(key(a, c))));
+            && (allowRepeat || !recent.has(key(a, c))) && (allowOffChoice || !offChoice.has(key(a, c))));
           if (b === undefined) continue;
           if (recent.has(key(a, b))) repeats++;
+          if (offChoice.has(key(a, b))) offChoices++;
           used.add(a).add(b);
           pairs.push([a, b]);
         }
       }
-      const score = pairs.length * 1000 - repeats;
+      const score = pairs.length * 1000 - offChoices * 10 - repeats;
       if (score > best.score) best = { pairs, score };
-      if (!repeats) break;
+      if (!repeats && !offChoices) break;
     }
     return best.pairs;
   }
@@ -329,6 +483,7 @@ export class Service {
     } catch (err) {
       this.log.error?.('Could not start group chat', err);
     }
+    await this.sendChoiceOffers();
     return started;
   }
 
@@ -343,8 +498,9 @@ export class Service {
   async startCall(kind, a, b, { aSid } = {}) {
     const callId = tx(this.db, () => {
       if (this.busy(a) || this.busy(b)) throw new UserError('One of you is already on a call.');
-      // Matched people stop waiting, so they aren't matched twice.
-      this.q('UPDATE users SET available_until = NULL WHERE id IN (?, ?)').run(a, b);
+      // Matched people stop waiting, so they aren't matched twice. Any "anyone
+      // this time" answer was for this chat only.
+      this.q('UPDATE users SET available_until = NULL, waiting_since = NULL, one_off = NULL WHERE id IN (?, ?)').run(a, b);
       return Number(this.q('INSERT INTO calls (kind, user_a, user_b, a_sid, created_at) VALUES (?, ?, ?, ?, ?)')
         .run(kind, a, b, aSid ?? null, this.now()).lastInsertRowid);
     });
