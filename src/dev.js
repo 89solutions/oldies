@@ -40,7 +40,7 @@ export function devRouter({ service, telephony, onAvailable }) {
           + btn(c.id, leg, 'decline', 'Press 2 (not now)') + btn(c.id, leg, 'noanswer', "Don't answer");
       }
       if (c.status === 'completed') {
-        return btn(c.id, leg, 'fb1', '1: talk again') + btn(c.id, leg, 'fb2', '2: no thanks') + btn(c.id, leg, 'fb9', '9: report');
+        return btn(c.id, leg, 'fb1', '1: talk again') + btn(c.id, leg, 'fb2', '2: no thanks') + btn(c.id, leg, 'fb8', "8: I'm worried about them") + btn(c.id, leg, 'fb9', '9: report');
       }
       return '';
     };

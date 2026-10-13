@@ -116,7 +116,10 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     if (service.isAvailable(user)) prompt.push("If you don't want any calls for now, press 3.");
     const pending = service.pendingFeedback(user.id)[0];
     if (pending) prompt.push(`To tell us if you'd like to talk to ${pending.other_name} again, press 4.`);
-    if (service.lastCall(user.id)) prompt.push('If someone on your last call was unkind or upset you, press 9.');
+    if (service.lastCall(user.id)) {
+      prompt.push("If you're worried about how the person from your last chat is doing, press 8.");
+      prompt.push('If someone on your last call was unkind or upset you, press 9.');
+    }
     ask(res, { prompt, action: '/voice/menu-choice', retryUrl: '/voice/menu', retry: retryOf(req) });
   }));
 
@@ -147,6 +150,16 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
         if (!pending) break;
         vr.redirect({ method: 'POST' }, url('/voice/after', { call: pending.id, leg: pending.user_a === user.id ? 'a' : 'b' }));
         return xml(res, vr);
+      }
+      case '8': {
+        const last = service.lastCall(user.id);
+        if (!last) break;
+        const leg = last.user_a === user.id ? 'a' : 'b';
+        const other = service.otherPartyFor(last, user.id);
+        return ask(res, {
+          prompt: `To tell our team you're worried about ${other.name}, press 8. To go back, press 1.`,
+          action: url('/voice/feedback', { call: last.id, leg, worried: 1 }), retryUrl: '/voice/menu', retry: 1,
+        });
       }
       case '9': {
         const last = service.lastCall(user.id);
@@ -495,6 +508,7 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     ask(res, {
       prompt: [`Thank you for chatting with ${them.name}.`,
         `If you'd like to talk to ${them.name} again, press 1.`, 'If not, press 2.',
+        `If you're worried about how ${them.name} is doing, press 8.`,
         `If ${them.name} was unkind or upset you, press 9.`],
       action: url('/voice/feedback', { call: call.id, leg }), retryUrl, retry: retryOf(req),
       giveUp: 'You can tell us later by ringing us or on the website. Goodbye.',
@@ -504,7 +518,7 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
   router.post('/feedback', wrap(async (req, res) => {
     const { call, me, them } = loadLeg(req);
     const digit = req.body.Digits;
-    if (req.query.reporting === '1' && digit !== '9') {
+    if ((req.query.reporting === '1' && digit !== '9') || (req.query.worried === '1' && digit !== '8')) {
       const vr = new VoiceResponse();
       vr.redirect({ method: 'POST' }, '/voice/menu');
       return xml(res, vr);
@@ -518,6 +532,18 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
     if (digit === '2') {
       await service.submitFeedback(call.id, me.id, false);
       return goodbye(res, 'Thank you. Goodbye.');
+    }
+    if (digit === '8') {
+      const { concernId } = service.raiseConcern(me.id, call.id, 'Raised by phone.');
+      const vr = new VoiceResponse();
+      const say = sayer(vr);
+      say(`Thank you for looking out for ${them.name}. Our team will gently see how they are. ${them.name} won't get into any trouble, and we will never tell them it was you.`);
+      say('If you would like to tell us what worried you, please speak after the beep, and press the hash key when you have finished. Or you can just hang up.');
+      vr.record({
+        action: url('/voice/concern-done', { concern: concernId }),
+        method: 'POST', maxLength: 120, finishOnKey: '#', playBeep: true,
+      });
+      return xml(res, vr);
     }
     if (digit === '9') {
       const { reportId } = await service.report(me.id, call.id, 'Reported by phone.');
@@ -542,6 +568,14 @@ export function voiceRouter({ service, config, log = console, onAvailable = () =
       service.addToReport(Number(req.query.report), user.id, `Voice message: ${req.body.RecordingUrl}`);
     }
     goodbye(res, 'Thank you for telling us. Take care. Goodbye.');
+  }));
+
+  router.post('/concern-done', wrap(async (req, res) => {
+    const user = service.ivrUser(req.body.CallSid) ?? service.getUserByPhone(req.body.To) ?? service.getUserByPhone(req.body.From);
+    if (user && req.body.RecordingUrl) {
+      service.addToConcern(Number(req.query.concern), user.id, `Voice message: ${req.body.RecordingUrl}`);
+    }
+    goodbye(res, 'Thank you. Take care. Goodbye.');
   }));
 
   // Twilio tells us when each call has finished, answered or not.
