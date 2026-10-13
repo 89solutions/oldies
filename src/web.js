@@ -7,6 +7,19 @@ import { page, field, errorBox, noticeBox, esc, when, timeOfDay } from './views.
 // much: short sentences, everyday words, no technical terms.
 
 const CONCERN_LABELS = { new: 'New', in_review: 'In review', actioned: 'Actioned', closed: 'Closed' };
+const GENDER_LABELS = { female: "I'm a woman", male: "I'm a man", unsaid: "I'd rather not say" };
+const WANTS_LABELS = { anyone: 'Anyone', women: 'Women only', men: 'Men only' };
+
+// Big radio buttons for "about you" and "who you'd like to chat with".
+function choiceFields(user = {}) {
+  const radios = (name, labels, current) => Object.entries(labels).map(([value, label]) => `
+<label class="tick"><input type="radio" name="${name}" value="${value}"${value === current ? ' checked' : ''}><span>${esc(label)}</span></label>`).join('');
+  return `<fieldset><legend>About you <span class="hint">So we can put you in touch with the right people.</span></legend>
+${radios('gender', GENDER_LABELS, user.gender ?? 'unsaid')}</fieldset>
+<fieldset><legend>Who would you like to chat with?</legend>
+${radios('wants', WANTS_LABELS, user.wants ?? 'anyone')}
+<p class="hint">If nobody like that is free after a little while, we'll ask if you'd like to chat with someone else that time. You can always say no and keep waiting. Group chats are open to everyone.</p></fieldset>`;
+}
 
 export function webRouter({ service, config, log = console, onAvailable = () => {} }) {
   const router = express.Router();
@@ -226,6 +239,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
 <input id="pin" name="pin" class="short" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
 <label for="pin2">Type the same 4 numbers again</label>
 <input id="pin2" name="pin2" class="short" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="new-password" required>
+${choiceFields()}
 <label class="tick"><input type="checkbox" name="agree" value="1" required><span>I have read <a href="/safety" target="_blank">Staying safe</a>, and I'll be kind to the people I chat to.</span></label>
 <button>Carry on</button>
 </form>`,
@@ -393,7 +407,16 @@ ${form('/me/end-text-chat', '<button class="secondary">End the text chat</button
 ${form('/me/available', `<button class="secondary">I don't want a chat now</button>`, '<input type="hidden" name="on" value="0">')}`;
     } else if (available) {
       const byText = user.available_medium === 'sms';
-      status = `<div class="card peach with-pic">${pic('tea')}<div>
+      const other = service.choiceOffer(user);
+      const words = other && service.offerWords(user, other);
+      const offer = words ? `<div class="card sky" role="status">
+<h2>${esc(words.none)}</h2>
+<p>${esc(words.question)}</p>
+<p class="muted">This is just for this one chat. Next time we'll look for ${esc(words.keepWaiting)} again.</p>
+${form('/me/offer', `<div class="row"><button name="answer" value="yes">Yes, ${esc(words.instead)} is fine this time</button>
+<button name="answer" value="no" class="secondary">No thanks, I'll keep waiting</button></div>`)}
+</div>` : '';
+      status = `${offer}<div class="card peach with-pic">${pic('tea')}<div>
 <h2>We're finding someone for you</h2>
 <p>${byText ? "You're on the list for a text message chat. We'll send you a text as soon as someone is free." : "You're on the list for a chat. We'll ring you as soon as someone is free, so please keep your phone nearby."}</p>
 <p>Why not put the kettle on? We'll keep looking until ${esc(timeOfDay(user.available_until))}.</p>
@@ -445,6 +468,13 @@ ${feedback ? `<h2>Your recent chats</h2>${feedback}` : ''}
 <h2>Your friends</h2>
 <p>People you've both said you'd like to chat with again. We still keep your numbers private.</p>
 ${friendList}
+<h2>Who you chat with</h2>
+<div class="card">
+<p>${esc(GENDER_LABELS[user.gender] ?? GENDER_LABELS.unsaid)}. You'd like to chat with <strong>${esc((WANTS_LABELS[user.wants] ?? WANTS_LABELS.anyone).toLowerCase())}</strong>.</p>
+<details><summary>Change this</summary>
+${form('/me/choices', `${choiceFields(user)}<button>Save</button>`)}
+</details>
+</div>
 <h2>Rather use the telephone?</h2>
 <p>You can do all of this by ringing us on <span class="phone">${esc(phone)}</span> and typing in your PIN.</p>
 ${lastCallReport(user)}
@@ -472,6 +502,28 @@ ${lastGroupReport(user, group)}`,
     const on = req.body.on === '1';
     service.setAvailable(req.user.id, on, req.body.medium);
     if (on) setImmediate(onAvailable);
+    res.redirect('/me');
+  }, '/me'));
+
+  router.post('/me/choices', requireUser, handle(async (req, res) => {
+    service.setChoices(req.user.id, req.body);
+    flash(req, 'Thank you, that is saved.');
+    setImmediate(onAvailable);
+    res.redirect('/me');
+  }, '/me'));
+
+  // The "would you like to speak to a man this time?" offer. Only lasts until
+  // their next chat; their saved choice stays as it is.
+  router.post('/me/offer', requireUser, handle(async (req, res) => {
+    if (req.body.answer === 'yes') {
+      service.acceptOffer(req.user.id);
+      flash(req, req.user.available_medium === 'sms'
+        ? "Lovely. We'll send you a text as soon as someone is free." : "Lovely. We'll ring you as soon as someone is free.");
+      setImmediate(onAvailable);
+    } else {
+      service.declineOffer(req.user.id);
+      flash(req, "That's fine. We'll keep looking and let you know when someone is free.");
+    }
     res.redirect('/me');
   }, '/me'));
 

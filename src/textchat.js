@@ -33,7 +33,8 @@ export class TextChats {
     const now = s.now();
     const callId = tx(s.db, () => {
       if (s.busy(a) || s.busy(b)) throw new UserError('One of you is already in a chat.');
-      this.q('UPDATE users SET available_until = NULL WHERE id IN (?, ?)').run(a, b);
+      // Any "anyone this time" answer was for this chat only.
+      this.q('UPDATE users SET available_until = NULL, waiting_since = NULL, one_off = NULL WHERE id IN (?, ?)').run(a, b);
       const started = kind === 'random';
       return Number(this.q(`INSERT INTO calls (kind, medium, user_a, user_b, status, a_state, b_state, started_at,
           last_activity_at, created_at) VALUES (?, 'sms', ?, ?, ?, 'joined', ?, ?, ?, ?)`)
@@ -146,6 +147,19 @@ export class TextChats {
       if (!last) return this.send(user, this.helpText());
       const { reported } = await s.report(user.id, last.id, 'Reported by text message.');
       return this.send(user, `Tea and Company: thank you for telling us. ${reported.name} has been blocked and our team will look into it.`);
+    }
+    // Answering "would you like to text with a man this time?". This is the
+    // most recent question we asked, so it comes before "chat again?".
+    if (user.one_off === 'offered' && user.available_medium === 'sms' && s.isAvailable(user)
+      && ['YES', 'NO', 'WAIT'].includes(word)) {
+      const keepWaiting = user.wants === 'men' ? 'a man' : 'a woman';
+      if (word === 'YES') {
+        s.acceptOffer(user.id);
+        setImmediate(() => s.onAvailable?.());
+        return this.send(user, "Tea and Company: lovely. We'll text you as soon as someone is free. This is just for this one chat.");
+      }
+      s.declineOffer(user.id);
+      return this.send(user, `Tea and Company: that's fine. We'll keep looking for ${keepWaiting} for you and text you when one is free.`);
     }
     if (word === 'YES' || word === 'NO') {
       const pending = s.pendingFeedback(user.id)[0];

@@ -6,6 +6,7 @@ A phone-first service that puts older people through to each other for a friendl
 
 - **Join** on a large-print website, or by ringing the service number and following the spoken menu.
 - **Say you're free**, choosing a **phone call** or a **text message chat** each time: one button on the website, ring in and press 1 (call) or 5 (text), or text `FREE` to the service number.
+- **Choose who you chat with**: anyone, women only or men only. If nobody like that is free after a short wait, the service asks "No female callers are available right now. Would you like to speak to a man this time?" Saying yes is for that one chat only. See [Who you chat with](#who-you-chat-with).
 - **Get matched at random** with someone else who's free for the same kind of chat. For calls, the service rings you both from its own number and joins you in a private conference room. For text chats, you both text the service number and it passes each message on, so numbers stay private either way.
 - **Every text message is screened** before it's passed on. Phone numbers, email addresses, links, addresses, talk of money or bank details, and abusive words are stopped.
 - **Talk again** only if you *both* press 1 (or tap "Yes please") after the chat. You then appear as friends and can ring each other through the service, still without seeing numbers.
@@ -87,6 +88,7 @@ Ring the service number:
   - 4: tell us if you'd like to talk to your last chat partner again
   - 5: put me in touch with someone new for a text message chat
   - 6: join a group chat (choose a group from the list; we ring back when enough people are free)
+  - 7: choose who you'd like to chat with (are you a woman or a man, and do you want anyone, women only or men only). People joining by phone are asked this straight after choosing their PIN; pressing nothing leaves "anyone".
   - 8: tell us you're worried about the person from your last chat
   - 9: report someone from your last chat
 
@@ -122,6 +124,15 @@ Rooms ("groups") are hobbies or topics. Nine starter groups are created on first
 - Group chats count towards the daily chat limit. There's no "talk again" vote after a group chat; people who get on can meet again in the same group.
 
 **Costs**: a phone group chat is one outbound call leg per person plus conference minutes. A text group chat sends one text to each other person for every message, so a group of 6 costs 5 outbound texts per message.
+
+## Who you chat with
+
+Members say whether they're a woman, a man, or would rather not say, and whether they'd like to chat with anyone, women only or men only. They choose when joining (website or phone) and can change it on their page or by pressing 7 on the phone menu. Existing members start as "anyone".
+
+- Choices are **mutual**: two people are only matched for a one-to-one chat (phone or text) if each fits what the other asked for. "Rather not say" only matches people happy to chat with anyone.
+- **The offer**: if nobody suitable turns up within `PREFERENCE_WAIT_MINUTES` (default 5), and someone else is free who'd be happy to chat with them, they're asked once per wait. Waiting for a call: we ring them with "No female callers are available right now. Would you like to speak to a man this time?" (1 = yes, and they're put straight through on that call; 2 = keep waiting). Waiting for a text chat: we text the same question (reply `YES` or `WAIT`). The website shows it as two buttons.
+- Saying yes only covers that one chat. Their saved choice never changes, and even after a yes we still pick someone they chose if one becomes free. The other person's choice is always respected.
+- Group chats are about a shared hobby and are open to everyone in the group, so these choices don't apply to them.
 
 ## Wellbeing concerns
 

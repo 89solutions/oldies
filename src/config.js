@@ -38,6 +38,9 @@ export function loadConfig(overrides = {}) {
     maxCallMinutes: int('MAX_CALL_MINUTES', 60),
     maxCallsPerDay: int('MAX_CALLS_PER_DAY', 6),
     avoidRepeatDays: int('AVOID_REPEAT_DAYS', 7),
+    // How long someone waits for the kind of person they asked for before we
+    // offer them anyone who's free, just for that one chat.
+    preferenceWaitMinutes: int('PREFERENCE_WAIT_MINUTES', 5),
     reportSuspendThreshold: int('REPORT_SUSPEND_THRESHOLD', 2),
     // Text chats end after this many hours with no messages.
     smsChatIdleHours: int('SMS_CHAT_IDLE_HOURS', 12),
