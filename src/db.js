@@ -74,6 +74,22 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at INTEGER NOT NULL
 );
 
+-- "I'm worried about them": wellbeing concerns about someone a member chatted with.
+-- Kept apart from reports: a concern never blocks, pauses or penalises anyone,
+-- and the person it's about is never told who raised it.
+CREATE TABLE IF NOT EXISTS concerns (
+  id            INTEGER PRIMARY KEY,
+  call_id       INTEGER REFERENCES calls(id),          -- set for a one-to-one chat
+  group_chat_id INTEGER REFERENCES group_chats(id),    -- set for a group chat
+  raised_by     INTEGER NOT NULL REFERENCES users(id),
+  about         INTEGER NOT NULL REFERENCES users(id),
+  details       TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','in_review','actioned','closed')),
+  team_note     TEXT,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+
 -- Links a phone-menu call (Twilio CallSid) to the person who entered their PIN.
 CREATE TABLE IF NOT EXISTS ivr_sessions (
   call_sid   TEXT PRIMARY KEY,
@@ -141,6 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_group_messages_chat ON group_messages(chat_id, cr
 CREATE INDEX IF NOT EXISTS idx_messages_call ON messages(call_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_calls_users ON calls(user_a, user_b);
 CREATE INDEX IF NOT EXISTS idx_reports_reported ON reports(reported, status);
+CREATE INDEX IF NOT EXISTS idx_concerns_status ON concerns(status, created_at);
 `;
 
 // Columns added after the first release. Each is added if an older database lacks it.

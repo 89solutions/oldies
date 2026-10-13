@@ -332,12 +332,25 @@ export class Groups {
     if (word === 'HELP') {
       return this.send(user, `${this.roomName(chat)} group: reply to send a message to everyone. Text WHO to see who's here, LEAVE to leave, or REPORT and a name if someone upsets you.`);
     }
-    if (/^REPORT\b/i.test(body.trim())) {
-      const target = body.trim().replace(/^report\b[\s:,-]*/i, '').trim();
+    // "REPORT JOHN" or "WORRIED JOHN": finds the person by name or by their number from WHO.
+    const named = (keyword) => {
+      const target = body.trim().replace(new RegExp(`^${keyword}\\b[\\s:,-]*`, 'i'), '').trim();
       const list = others();
       const match = /^\d+$/.test(target) ? list[Number(target) - 1]
         : list.filter((p) => p.name.toLowerCase() === cleanName(target).toLowerCase());
-      const person = Array.isArray(match) ? (match.length === 1 ? match[0] : null) : match;
+      return { list, person: Array.isArray(match) ? (match.length === 1 ? match[0] : null) : match };
+    };
+    // Never passed on to the group: the person isn't told anyone is worried about them.
+    if (/^WORRIED\b/i.test(body.trim())) {
+      const { list, person } = named('worried');
+      if (!person) {
+        return this.send(user, `Tea and Company: who are you worried about? Reply WORRIED and a number: ${list.map((p, i) => `${i + 1} for ${p.name}`).join(', ') || 'nobody else is here'}.`);
+      }
+      s.raiseGroupConcern(user.id, chat.id, person.user_id, 'Raised by text message during a group chat.');
+      return this.send(user, `Tea and Company: thank you for looking out for ${person.name}. Our team will gently see how they are. ${person.name} won't get into any trouble, and we will never tell them it was you.`);
+    }
+    if (/^REPORT\b/i.test(body.trim())) {
+      const { list, person } = named('report');
       if (!person) {
         return this.send(user, `Tea and Company: who would you like to report? Reply REPORT and a number: ${list.map((p, i) => `${i + 1} for ${p.name}`).join(', ') || 'nobody else is here'}.`);
       }

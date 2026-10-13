@@ -136,6 +136,11 @@ export class TextChats {
       return;
     }
 
+    if (word === 'WORRIED') {
+      const last = s.lastCall(user.id);
+      if (!last) return this.send(user, this.helpText());
+      return this.worried(user, last);
+    }
     if (word === 'REPORT') {
       const last = s.lastCall(user.id);
       if (!last) return this.send(user, this.helpText());
@@ -168,11 +173,18 @@ export class TextChats {
     return this.send(user, this.helpText());
   }
 
+  async worried(user, call) {
+    const { about } = this.service.raiseConcern(user.id, call.id, 'Raised by text message.');
+    return this.send(user, `Tea and Company: thank you for looking out for ${about.name}. Our team will gently see how they are. ${about.name} won't get into any trouble, and we will never tell them it was you.`);
+  }
+
   async inChat(call, user, body, word) {
     const s = this.service;
     const other = s.otherPartyFor(call, user.id);
     const isInvitee = call.status === 'dialing' && call.user_b === user.id;
 
+    // Never passed on: the other person isn't told anyone is worried about them.
+    if (word === 'WORRIED' && call.started_at) return this.worried(user, call);
     if (word === 'REPORT') {
       await s.report(user.id, call.id, 'Reported by text message during a text chat.');
       return; // report() ends the chat and lets them know

@@ -1,10 +1,12 @@
 import express from 'express';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { UserError } from './service.js';
+import { UserError, CONCERN_STATUSES } from './service.js';
 import { page, field, errorBox, noticeBox, esc, when, timeOfDay } from './views.js';
 
 // The words on these pages are written for people who don't use computers
 // much: short sentences, everyday words, no technical terms.
+
+const CONCERN_LABELS = { new: 'New', in_review: 'In review', actioned: 'Actioned', closed: 'Closed' };
 
 export function webRouter({ service, config, log = console, onAvailable = () => {} }) {
   const router = express.Router();
@@ -167,6 +169,12 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
 <li>By text message: send a text that just says <strong>REPORT</strong>. In a group chat, send <strong>REPORT</strong> and the person's name.</li>
 <li>On your page: press "Something wasn't right" under the chat.</li>
 </ul>
+<h2>If you're worried about someone</h2>
+<ul class="tips">
+<li>If someone you chatted with sounded very low, lonely or not themselves, you can tell us. Our team will gently see how they are.</li>
+<li>They won't get into any trouble, they won't be blocked, and we will never tell them it was you.</li>
+<li>On the phone: after the chat, press <strong>8</strong>. By text message: send <strong>WORRIED</strong>. In a group chat, send <strong>WORRIED</strong> and the person's name. On your page: press "I'm worried about them".</li>
+</ul>
 <p>If you are ever in danger, ring 999.</p>`,
   }));
 
@@ -180,6 +188,7 @@ export function webRouter({ service, config, log = console, onAvailable = () => 
       ['How do I end a chat?', 'On the phone, just put the phone down, or press the star key (*). In a text chat, send a text that just says END.'],
       ['Can I chat to the same person again?', "Yes, if you both want to. After each chat we ask you both. If you both say yes, they'll appear on your page and you can ring or text them through us."],
       ['What if someone is unkind to me?', "Tell us straight away. After a phone chat, press 9. In a text chat, send REPORT. You'll never be put in touch with them again, and our team will look into it."],
+      ["What if I'm worried about someone I chatted with?", "Tell us, and our team will gently see how they are. After a phone chat, press 8. By text message, send WORRIED. They won't get into any trouble, and we will never tell them it was you."],
       ['Do you listen to the calls?', 'No. Phone calls are not recorded.'],
       ['Do you read the text messages?', 'Every text message is checked by our system to keep everyone safe. They are kept for 30 days, so our team can look into it if someone tells us about a problem, and then deleted.'],
       ["I've forgotten my PIN", 'No problem. Press "Sign in", then "I\'ve forgotten my PIN", and we\'ll send you a text message to help you choose a new one.'],
@@ -341,7 +350,8 @@ ${practiceNote('The message')}
     const live = service.activeCall(user.id);
     const group = live ? null : service.groups.activeFor(user.id);
     const waitingRoom = available && user.available_room ? service.groups.getRoom(user.available_room) : null;
-    const friends = service.listFriends(user.id);
+    const friends = service.listFriends(user.id)
+      .map((f) => ({ ...f, last_call_id: service.lastCallBetween(user.id, f.id)?.id }));
     const pending = service.pendingFeedback(user.id);
     const csrf = req.session.csrf;
     const form = (action, inner, extra = '') => `<form method="post" action="${action}">${field(csrf)}${extra}${inner}</form>`;
@@ -360,7 +370,8 @@ ${byText ? `<p>Reply to our text messages on your phone. Everyone in the group w
 <p>To leave, send a text that just says <strong>LEAVE</strong>, or press the button below.</p>` : '<p>Please answer your phone. To leave the chat, press the star key (*) or put the phone down.</p>'}
 </div></div>
 ${byText ? form('/me/leave-group', '<button class="secondary">Leave the group chat</button>') : ''}
-<p><a href="/me/report-group?chat=${group.id}">Someone in this group upset me</a></p>`;
+<p><a href="/me/report-group?chat=${group.id}#worried">I'm worried about someone in this group</a></p>
+<p><a href="/me/report-group?chat=${group.id}#problem">Someone in this group upset me</a></p>`;
     } else if (live?.medium === 'sms') {
       const other = service.otherPartyFor(live, user.id);
       status = `<div class="card sky with-pic">${pic('text')}<div>
@@ -407,7 +418,8 @@ ${form('/me/available', `
 ${form('/me/feedback', `<div class="row"><button name="answer" value="yes">Yes please</button><button name="answer" value="no" class="secondary">No thank you</button></div>`,
     `<input type="hidden" name="call" value="${c.id}">`)}
 <p class="muted">We'll only put you back in touch if ${esc(c.other_name)} says yes too.</p>
-<p><a href="/me/report?call=${c.id}">Something wasn't right in this chat</a></p>
+<p><a href="/me/report?call=${c.id}#worried">I'm worried about ${esc(c.other_name)}</a></p>
+<p><a href="/me/report?call=${c.id}#problem">Something wasn't right in this chat</a></p>
 </div>`).join('');
 
     const friendList = friends.length
@@ -417,6 +429,7 @@ ${form('/me/feedback', `<div class="row"><button name="answer" value="yes">Yes p
 ${f.last_spoke ? `<p class="muted">Your last chat: ${esc(when(f.last_spoke))}</p>` : ''}
 ${form('/me/call-friend', `<div class="row"><button name="medium" value="voice">Ring ${esc(f.name)}</button>
 <button name="medium" value="sms" class="secondary">Text ${esc(f.name)}</button></div>`, `<input type="hidden" name="friend" value="${f.id}">`)}
+${f.last_call_id ? `<p><a href="/me/report?call=${f.last_call_id}#worried">I'm worried about ${esc(f.name)}</a></p>` : ''}
 <details><summary>Don't want to hear from ${esc(f.name)} any more?</summary>
 <p>If you press this, you will never be put in touch with ${esc(f.name)} again. They won't be told.</p>
 ${form('/me/block', `<button class="danger small">Stop all contact with ${esc(f.name)}</button>`, `<input type="hidden" name="user" value="${f.id}">`)}
@@ -444,14 +457,15 @@ ${lastGroupReport(user, group)}`,
       WHERE p.user_id = ? AND p.joined_at IS NOT NULL AND g.created_at > ? ORDER BY g.created_at DESC LIMIT 1`)
       .get(user.id, service.now() - 7 * 24 * 60 * 60 * 1000);
     if (!last || last.id === live?.id) return '';
-    return `<p><a href="/me/report-group?chat=${last.id}">Tell us about a problem in the ${esc(service.groups.roomName(last))} group chat</a></p>`;
+    return `<p><a href="/me/report-group?chat=${last.id}">Tell us about the ${esc(service.groups.roomName(last))} group chat: a problem, or someone you're worried about</a></p>`;
   }
 
   function lastCallReport(user) {
     const last = service.lastCall(user.id);
     if (!last || service.pendingFeedback(user.id).some((c) => c.id === last.id)) return '';
     const other = service.otherPartyFor(last, user.id);
-    return `<p><a href="/me/report?call=${last.id}">Tell us about a problem with ${esc(other.name)}, your last chat</a></p>`;
+    return `<p><a href="/me/report?call=${last.id}#worried">I'm worried about ${esc(other.name)}, your last chat</a></p>
+<p><a href="/me/report?call=${last.id}#problem">Tell us about a problem with ${esc(other.name)}, your last chat</a></p>`;
   }
 
   router.post('/me/available', requireUser, handle(async (req, res) => {
@@ -472,11 +486,13 @@ ${lastGroupReport(user, group)}`,
   router.get('/me/report', requireUser, (req, res) => {
     const call = service.getCall(Number(req.query.call));
     const other = call && service.otherPartyFor(call, req.user.id);
-    if (!other) return res.redirect('/me');
+    if (!other || !call.started_at) return res.redirect('/me');
     render(req, res, {
-      title: 'Tell us what happened', user: req.user, path: '/me',
+      title: `Your chat with ${other.name}`, user: req.user, path: '/me',
       body: `
-<h1>Tell us what happened</h1>
+<h1>Tell us about your chat with ${esc(other.name)}</h1>
+${worriedForm({ csrf: req.session.csrf, action: '/me/concern', who: esc(other.name), hidden: `<input type="hidden" name="call" value="${call.id}">` })}
+<h2 id="problem">${esc(other.name)} was unkind or upset you</h2>
 <p>We're sorry something wasn't right with ${esc(other.name)}. Thank you for telling us.</p>
 <div class="card sage with-pic">${pic('shield')}<div>
 <p>When you press the button, <strong>you will never be put in touch with ${esc(other.name)} again</strong>, and our team will look into it.</p>
@@ -489,6 +505,28 @@ ${lastGroupReport(user, group)}`,
 <a class="button secondary" href="/me">Go back</a>`,
     });
   });
+
+  // "I'm worried about them": a gentle note to the team, separate from reporting.
+  // `who` is already escaped: a first name, or "someone in this group".
+  function worriedForm({ csrf, action, who, they = who, hidden, chooser = '' }) {
+    return `<div class="card peach with-pic" id="worried">${pic('heart')}<div>
+<h2 style="margin-top:0">I'm worried about ${who}</h2>
+<p>Perhaps ${who} sounded very low, lonely or not themselves. Let us know and our team will gently see how they are.</p>
+<p><strong>${they} won't get into any trouble or be blocked, and we will never tell them it was you.</strong></p>
+</div></div>
+<form method="post" action="${action}">${field(csrf)}${hidden}${chooser}
+<label for="details">What made you worried? <span class="hint">You don't have to write anything, but a few words help.</span></label>
+<textarea id="details" name="details" rows="4"></textarea>
+<button>Tell the team I'm worried</button>
+</form>
+<p class="muted">If you think someone is in danger right now, ring 999.</p>`;
+  }
+
+  router.post('/me/concern', requireUser, handle(async (req, res) => {
+    const { about } = service.raiseConcern(req.user.id, Number(req.body.call), req.body.details);
+    flash(req, `Thank you for looking out for ${about.name}. Our team will gently see how they are, and we won't tell them it was you.`);
+    res.redirect('/me');
+  }, '/me'));
 
   router.post('/me/report', requireUser, handle(async (req, res) => {
     const { reported } = await service.report(req.user.id, Number(req.body.call), req.body.reason);
@@ -606,10 +644,15 @@ ${member ? `<h2 id="new">Start a new group</h2>
     if (!chat || !service.groups.participant(chat.id, req.user.id)) return res.redirect('/me');
     const others = groupOthers(chat.id, req.user.id);
     if (!others.length) return res.redirect('/me');
+    const chooser = (legend) => `<fieldset style="border:none;padding:0;margin:0"><legend><strong>${legend}</strong></legend>
+${others.map((p, i) => `<label class="tick"><input type="radio" name="person" value="${p.user_id}"${i ? '' : ' required'}> ${esc(p.name)}</label>`).join('')}
+</fieldset>`;
     render(req, res, {
-      title: 'Tell us what happened', user: req.user, path: '/me',
+      title: 'Tell us about the group chat', user: req.user, path: '/me',
       body: `
-<h1>Tell us what happened</h1>
+<h1>Tell us about the ${esc(service.groups.roomName(chat))} group chat</h1>
+${worriedForm({ csrf: req.session.csrf, action: '/me/concern-group', who: 'someone in this group', they: 'They', hidden: `<input type="hidden" name="chat" value="${chat.id}">`, chooser: chooser('Who are you worried about?') })}
+<h2 id="problem">Someone was unkind or upset you</h2>
 <p>We're sorry something wasn't right in the ${esc(service.groups.roomName(chat))} group chat. Thank you for telling us.</p>
 <form method="post" action="/me/report-group">${field(req.session.csrf)}<input type="hidden" name="chat" value="${chat.id}">
 <fieldset style="border:none;padding:0;margin:0"><legend><strong>Who upset you?</strong></legend>
@@ -625,6 +668,15 @@ ${others.map((p, i) => `<label class="tick"><input type="radio" name="person" va
 <a class="button secondary" href="/me">Go back</a>`,
     });
   });
+
+  router.post('/me/concern-group', requireUser, handle(async (req, res) => {
+    const chatId = Number(req.body.chat);
+    const person = groupOthers(chatId, req.user.id).find((p) => p.user_id === Number(req.body.person));
+    if (!person) throw new UserError('Please choose the person you are worried about.');
+    service.raiseGroupConcern(req.user.id, chatId, person.user_id, req.body.details);
+    flash(req, `Thank you for looking out for ${person.name}. Our team will gently see how they are, and we won't tell them it was you.`);
+    res.redirect('/me');
+  }, '/me'));
 
   router.post('/me/report-group', requireUser, handle(async (req, res) => {
     const chatId = Number(req.body.chat);
@@ -647,7 +699,7 @@ ${others.map((p, i) => `<label class="tick"><input type="radio" name="person" va
   };
 
   router.get('/admin', adminAuth, (req, res) => {
-    const { reports, suspended, stats } = service.adminOverview();
+    const { concerns, reports, suspended, stats } = service.adminOverview();
     const stopped = service.texts.recentlyStopped();
     const groupStopped = service.q(`SELECT m.*, u.name AS sender_name FROM group_messages m JOIN users u ON u.id = m.sender
       WHERE m.delivered = 0 ORDER BY m.created_at DESC LIMIT 20`).all();
@@ -660,6 +712,18 @@ ${others.map((p, i) => `<label class="tick"><input type="radio" name="person" va
       body: `
 <h1>Team page</h1>
 <p>${stats.users} members · ${stats.waiting} waiting · ${stats.live_calls} live calls · ${stats.live_groups} live group chats · ${stats.total_calls} chats so far · ${stats.friendships} friendships</p>
+<h2>⚠ Wellbeing concerns <span class="hint">(priority: look at these first)</span></h2>
+<p class="muted">Someone is worried about how a member is doing. These never block or pause anyone. Never tell the member who raised it.</p>
+${concerns.length ? `<table><tr><th>When</th><th>Worried about</th><th>Raised by</th><th>What they said</th><th>Status and team note</th></tr>
+${concerns.map((c) => `<tr${c.status === 'new' ? ' style="background:var(--warn-soft)"' : ''}><td>${esc(when(c.created_at))}</td>
+<td><strong>${esc(c.about_name)}</strong> (#${c.about})<br>${esc(c.about_phone)}<br>${esc(c.about_status)} · ${c.people_worried} ${c.people_worried === 1 ? 'person' : 'people'} worried</td>
+<td>${esc(c.raised_by_name)} (#${c.raised_by})</td>
+<td>${c.room_name ? `<p>${esc(c.room_name)} group chat (${c.medium === 'sms' ? 'text' : 'phone'})</p>` : ''}<pre>${esc(c.details)}</pre>${c.group_chat_id ? `<a href="/admin/group/${c.group_chat_id}">See the group chat</a>` : c.medium === 'sms' ? `<a href="/admin/chat/${c.call_id}">Read the text chat</a>` : ''}</td>
+<td><form method="post" action="/admin/concern">${field(csrf)}<input type="hidden" name="id" value="${c.id}">
+<select name="status" aria-label="Status">${CONCERN_STATUSES.map((st) => `<option value="${st}"${st === c.status ? ' selected' : ''}>${CONCERN_LABELS[st]}</option>`).join('')}</select>
+<textarea name="note" rows="3" aria-label="Team note" placeholder="Team note: who followed up and what happened">${esc(c.team_note)}</textarea>
+<button class="small">Save</button></form></td></tr>`).join('')}</table>`
+    : '<p>No open concerns.</p>'}
 <h2>Open reports</h2>
 ${reports.length ? `<table><tr><th>When</th><th>Reported</th><th>By</th><th>What happened</th><th></th></tr>
 ${reports.map((r) => `<tr><td>${esc(when(r.created_at))}</td>
@@ -745,6 +809,12 @@ ${lines.map((m) => `<tr><td>${esc(when(m.created_at))}</td><td>${esc(m.sender_na
     flash(req, 'Reinstated and reports cleared. Anyone who reported them still has them blocked.');
     res.redirect('/admin');
   });
+
+  router.post('/admin/concern', adminAuth, handle(async (req, res) => {
+    service.updateConcern(Number(req.body.id), { status: req.body.status, note: req.body.note });
+    flash(req, req.body.status === 'closed' ? 'Concern closed.' : 'Concern updated.');
+    res.redirect('/admin');
+  }, '/admin'));
 
   router.post('/admin/dismiss', adminAuth, (req, res) => {
     service.dismissReport(Number(req.body.id));

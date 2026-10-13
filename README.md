@@ -87,9 +87,10 @@ Ring the service number:
   - 4: tell us if you'd like to talk to your last chat partner again
   - 5: put me in touch with someone new for a text message chat
   - 6: join a group chat (choose a group from the list; we ring back when enough people are free)
+  - 8: tell us you're worried about the person from your last chat
   - 9: report someone from your last chat
 
-After every phone chat: 1 = talk again, 2 = no thanks, 9 = report (blocks them, then lets you leave a spoken message for the team).
+After every phone chat: 1 = talk again, 2 = no thanks, 8 = I'm worried about them (lets you leave a spoken message for the team), 9 = report (blocks them, then lets you leave a spoken message for the team).
 
 ## Text messages
 
@@ -104,6 +105,7 @@ Members text the service number:
 | `GROUPS` | A numbered list of group chats |
 | `JOIN 3` | Put me on the list for group 3 by text |
 | `REPORT` | Ends the chat (or reports your last chat), blocks them, and sends it to the team |
+| `WORRIED` | Tells the team you're worried about the person you're chatting with (or your last chat). Never passed on; the chat carries on |
 | anything else | A short help message |
 
 Friends can also be texted from the website ("Text Arthur"). The friend gets a text asking them to reply YES first. Text chats close on their own after `SMS_CHAT_IDLE_HOURS` (12) without messages.
@@ -115,11 +117,19 @@ Rooms ("groups") are hobbies or topics. Nine starter groups are created on first
 - **Joining** works like a one-to-one chat: say you're free, but for a particular group, by phone or by text. Website: "Group chats" page. Phone menu: press 6. Text: `GROUPS`, then `JOIN` and a number.
 - **Starting**: once `GROUP_MIN_SIZE` (3) people are waiting for the same group and the same kind of chat, the matcher starts one. Later arrivals are added to a chat that's already going, up to `GROUP_MAX_SIZE` (6). People who've blocked each other are never put in the same group chat.
 - **By phone**: everyone is rung from the service number and hears the group's name and the first names of the others; press 1 to join. They meet in a private conference `tea-and-company-group-<id>`. The first in waits on hold. One person leaving (`*` or hanging up) doesn't end it for the rest. When only one person is left, they're told everyone else has gone (or, if it never got going, kept on the list).
-- **By text**: each message is screened and then sent to everyone else as "Gardening group, Margaret: …". `WHO` lists who's there, `LEAVE` leaves, `REPORT` and a name or number reports someone.
+- **By text**: each message is screened and then sent to everyone else as "Gardening group, Margaret: …". `WHO` lists who's there, `LEAVE` leaves, `REPORT` and a name or number reports someone, `WORRIED` and a name or number raises a wellbeing concern (never passed on to the group).
 - **Safety**: reporting someone in a group blocks them for you, takes them out of the chat at once, and counts towards pausing their account like any other report. 3 stopped messages take the sender out of the group and report them automatically. After a phone group chat, press 9 to report someone by name. Website: "Someone in this group upset me". The team page shows group reports, stopped group messages and the text of reported group chats.
 - Group chats count towards the daily chat limit. There's no "talk again" vote after a group chat; people who get on can meet again in the same group.
 
 **Costs**: a phone group chat is one outbound call leg per person plus conference minutes. A text group chat sends one text to each other person for every message, so a group of 6 costs 5 outbound texts per message.
+
+## Wellbeing concerns
+
+Separate from reporting someone for breaking the rules, a member can tell the team they're worried about someone they chatted with, for example because they sounded very low. Website: "I'm worried about them" on the chat's report page (or on a friend's card, or the group chat page). Phone: press 8 after a chat or in the menu. Text: `WORRIED` (in a group, `WORRIED` and a name).
+
+- A concern never blocks, pauses, removes or penalises anyone, however many there are, and isn't counted as a report.
+- The person it's about is never told, and nothing is sent to them.
+- Concerns are listed first on the team page as priority, newest unhandled first, with the member's number so the team can follow up, who raised it, and how many people are worried about them. The team moves each one through New, In review, Actioned and Closed and keeps a note. A second concern from the same person while one is open is added to it.
 
 ## Safeguards
 

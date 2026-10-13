@@ -13,6 +13,7 @@ export class UserError extends Error {}
 
 const DAY = 24 * 60 * 60 * 1000;
 const ACTIVE_CALL = `status IN ('dialing','in_progress')`;
+export const CONCERN_STATUSES = ['new', 'in_review', 'actioned', 'closed'];
 
 export class Service {
   constructor({ db, config, telephony, log = console, now = () => Date.now() }) {
@@ -567,6 +568,49 @@ export class Service {
     this.q(`UPDATE reports SET reason = reason || ? WHERE id = ? AND reporter = ?`).run(`\n${extra}`, reportId, userId);
   }
 
+  // "I'm worried about them": a wellbeing concern, not a complaint. Unlike a
+  // report it never blocks, pauses or penalises the person, and they are never
+  // told who raised it. A second concern from the same person about the same
+  // person, while the first is still open, is added to the first.
+  raiseConcern(userId, callId, details) {
+    const call = this.getCall(callId);
+    const other = call?.started_at ? this.otherPartyFor(call, userId) : null;
+    if (!other) throw new UserError('We could not find that chat.');
+    return this.saveConcern({ callId, groupChatId: null, userId, about: other, details });
+  }
+
+  raiseGroupConcern(userId, chatId, aboutId, details) {
+    const me = this.groups.participant(chatId, userId);
+    const them = userId !== aboutId && this.groups.participant(chatId, aboutId);
+    if (!me?.joined_at || !them?.joined_at) throw new UserError('We could not find that person in the group chat.');
+    return this.saveConcern({ callId: null, groupChatId: chatId, userId, about: this.getUser(aboutId), details });
+  }
+
+  saveConcern({ callId, groupChatId, userId, about, details }) {
+    const text = String(details ?? '').trim().slice(0, 1000) || 'No details given';
+    const open = this.q(`SELECT id FROM concerns WHERE raised_by = ? AND about = ? AND status != 'closed'`).get(userId, about.id);
+    if (open) {
+      this.addToConcern(open.id, userId, text);
+      return { concernId: open.id, about };
+    }
+    const concernId = Number(this.q(`INSERT INTO concerns (call_id, group_chat_id, raised_by, about, details, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).run(callId, groupChatId, userId, about.id, text, this.now(), this.now()).lastInsertRowid);
+    this.log.warn?.(`Wellbeing concern ${concernId} raised about user ${about.id}`);
+    return { concernId, about };
+  }
+
+  addToConcern(concernId, userId, extra) {
+    this.q(`UPDATE concerns SET details = details || ?, updated_at = ? WHERE id = ? AND raised_by = ?`)
+      .run(`\n${extra}`, this.now(), concernId, userId);
+  }
+
+  // The most recent chat two people actually had, for raising a concern about a friend.
+  lastCallBetween(a, b) {
+    return this.q(`SELECT * FROM calls WHERE started_at IS NOT NULL
+      AND ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
+      ORDER BY created_at DESC LIMIT 1`).get(a, b, b, a);
+  }
+
   async suspend(userId) {
     this.q(`UPDATE users SET status = 'suspended', available_until = NULL, available_room = NULL WHERE id = ?`).run(userId);
     const group = this.groups.activeFor(userId);
@@ -588,6 +632,16 @@ export class Service {
           (SELECT x.name FROM group_chats g JOIN rooms x ON x.id = g.room_id WHERE g.id = r.group_chat_id) AS room_name
         FROM reports r JOIN users a ON a.id = r.reporter JOIN users b ON b.id = r.reported
         WHERE r.status = 'open' ORDER BY r.created_at DESC`).all(),
+      // Wellbeing concerns come first on the team page: new ones, then those being looked at.
+      concerns: this.q(`SELECT c.*, a.name AS raised_by_name, b.name AS about_name, b.phone AS about_phone,
+          b.status AS about_status,
+          (SELECT COUNT(DISTINCT x.raised_by) FROM concerns x WHERE x.about = c.about) AS people_worried,
+          COALESCE((SELECT medium FROM calls k WHERE k.id = c.call_id),
+            (SELECT medium FROM group_chats g WHERE g.id = c.group_chat_id)) AS medium,
+          (SELECT x.name FROM group_chats g JOIN rooms x ON x.id = g.room_id WHERE g.id = c.group_chat_id) AS room_name
+        FROM concerns c JOIN users a ON a.id = c.raised_by JOIN users b ON b.id = c.about
+        WHERE c.status != 'closed'
+        ORDER BY CASE c.status WHEN 'new' THEN 0 WHEN 'in_review' THEN 1 ELSE 2 END, c.created_at DESC`).all(),
       suspended: this.q(`SELECT id, name, phone, created_at FROM users WHERE status = 'suspended'`).all(),
       stats: this.q(`SELECT
           (SELECT COUNT(*) FROM users WHERE verified = 1) AS users,
@@ -615,6 +669,13 @@ export class Service {
 
   dismissReport(reportId) {
     this.q(`UPDATE reports SET status = 'dismissed' WHERE id = ?`).run(reportId);
+  }
+
+  updateConcern(concernId, { status, note }) {
+    if (!CONCERN_STATUSES.includes(status)) throw new UserError('Please choose a status.');
+    const changed = this.q(`UPDATE concerns SET status = ?, team_note = ?, updated_at = ? WHERE id = ?`)
+      .run(status, String(note ?? '').trim().slice(0, 2000) || null, this.now(), concernId).changes;
+    if (!changed) throw new UserError('We could not find that concern.');
   }
 
   // ---------- phone menu sessions ----------
